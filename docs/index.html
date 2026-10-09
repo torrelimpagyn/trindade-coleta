@@ -27,6 +27,7 @@ header h1{font-size:17px;margin:0}header .s{font-size:12.5px;opacity:.9;margin-t
 .pill{display:inline-block;background:var(--g);color:#fff;font-weight:700;font-size:12px;border-radius:12px;padding:3px 10px;margin:2px 0 8px}
 .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}.kv span{color:var(--mut)}.kv b{font-weight:700}
 .kv:last-of-type{border-bottom:0}
+.par{display:flex;gap:8px;align-items:center;padding:6px 0 6px 10px;font-size:12.5px;color:var(--ink);text-decoration:none;border-left:3px solid #e08a00;margin:4px 0}.par span{color:var(--mut)}.par b{margin-left:auto}.par i{font-style:normal;color:var(--g);font-weight:600}
 .btn{display:block;width:100%;margin-top:10px;border:1px solid var(--g);color:var(--g);background:var(--card);border-radius:10px;padding:9px;font:inherit;font-weight:700}
 .st-w{color:var(--mut)}.st-a{color:var(--g)}.st-e{color:var(--amb)}.st-r{color:var(--red)}
 #sheet{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;flex-direction:column}#sheet.open{display:flex}
@@ -64,7 +65,8 @@ function render(){
    ${(s.veic.length?s.veic:['—']).map((v,i)=>`<div class="kv"><span>Veículo ${i+1}</span><b>${v}</b></div>`).join('')}
    <div class="kv"><span>Distância percorrida</span><b>${s.dist?nf(s.dist,1)+' km':'—'}</b></div>
    <div class="kv"><span>Velocidade média</span><b>${s.vel?nf(s.vel,1)+' km/h':'—'}</b></div>
-   <div class="kv"><span>Tempo de parada nesta rota</span><b>${s.stop?hm(s.stop):'—'}</b></div>
+   <div class="kv"><span>Paradas longas no setor (5 min ou mais)</span><b>${(s.par||[]).length?(s.par.length+' · '+hm(s.stop)):'nenhuma'}</b></div>
+   ${(s.par||[]).map(p=>`<a class="par" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p[3]},${p[4]}"><span>${p[0]} às ${p[1]}</span><b>${hm(p[2])}</b><i>ver local ›</i></a>`).join('')}
    <div class="kv"><span>Última posição</span><b>${s.ult||'—'}</b></div>
    ${(s.lin||[]).length?`<button class="btn" data-m="${s.s}">Ver no mapa</button>`:''}</div></div>`}).join('');
  document.querySelectorAll('.sh').forEach(h=>h.onclick=()=>{const c=h.parentNode.dataset.c;OPEN.has(c)?OPEN.delete(c):OPEN.add(c);render()});
@@ -79,9 +81,10 @@ function openMap(c){const s=D.S.find(x=>x.s===c);document.getElementById('sheet'
  s.ring.forEach(r=>L.polygon(r,{color:'#555',weight:1.5,dashArray:'5 4',fill:false}).addTo(lay));
  const L0=s.lin||[];L.polyline(L0.filter(l=>!l[0]).map(l=>l[1]),{color:'#d13b30',weight:4,opacity:.9}).addTo(lay);
  L.polyline(L0.filter(l=>l[0]).map(l=>l[1]),{color:'#1a8a4a',weight:4.5}).addTo(lay);
+ (s.par||[]).forEach(p=>L.circleMarker([p[3],p[4]],{radius:9,color:'#fff',weight:2,fillColor:'#e08a00',fillOpacity:1}).bindTooltip(`Parada ${p[0]}–${p[1]} · ${hm(p[2])}`).addTo(lay));
  if(s.pos&&s.sit==='ATIVO')L.marker(s.pos,{icon:L.divIcon({className:'',html:'<div class="truck"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(lay);
  document.getElementById('shT').textContent='Setor '+s.s+' · '+nf(s.pct)+'%';
- document.getElementById('shF').innerHTML=`${(s.veic||[]).join(', ')} · última posição ${s.ult||'—'}<div class="leg"><span><i style="background:#1a8a4a"></i>Executado</span><span><i style="background:#d13b30"></i>Falta executar</span></div>`;
+ document.getElementById('shF').innerHTML=`${(s.veic||[]).join(', ')} · última posição ${s.ult||'—'}<div class="leg"><span><i style="background:#1a8a4a"></i>Executado</span><span><i style="background:#d13b30"></i>Falta executar</span><span><i style="background:#e08a00;width:10px;height:10px;border-radius:50%"></i>Parada longa</span></div>`;
  setTimeout(()=>{map.invalidateSize();map.fitBounds(L.latLngBounds((s.lin||[]).length?s.lin.flatMap(l=>l[1]):s.ring.flat()),{padding:[20,20]})},30);}
 document.getElementById('back').onclick=()=>document.getElementById('sheet').classList.remove('open');
 document.querySelectorAll('.tabs button').forEach(b=>{b.classList.toggle('on',b.dataset.t===TURNO);b.onclick=()=>{TURNO=b.dataset.t;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));render()}});
