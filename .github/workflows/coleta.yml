@@ -1,0 +1,40 @@
+name: Coleta Trindade
+
+on:
+  schedule:
+    # a cada 15 min das 04h às 00h45 (horário de Brasília = UTC-3)
+    - cron: "*/15 7-23 * * *"
+    - cron: "*/15 0-3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: coleta
+  cancel-in-progress: true
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests==2.32.3 cryptography==43.0.3
+      - name: Coletar dados da INLOG
+        env:
+          INLOG_USUARIO: ${{ secrets.INLOG_USUARIO }}
+          INLOG_SENHA: ${{ secrets.INLOG_SENHA }}
+          SENHA_SITE: ${{ secrets.SENHA_SITE }}
+        run: python coletor/coletor.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - uses: actions/deploy-pages@v4
