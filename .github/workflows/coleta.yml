@@ -1,40 +1,74 @@
 name: Coleta Trindade
 
+# Cada execução fica ligada por até ~5h40 e atualiza os dados a cada 5 minutos.
+# Os horários abaixo só servem para (re)iniciar a coleta: se uma execução já estiver
+# rodando, a nova fica na fila e começa assim que a anterior terminar.
 on:
   schedule:
-    # a cada 15 min das 04h às 00h45 (horário de Brasília = UTC-3)
-    - cron: "*/15 7-23 * * *"
-    - cron: "*/15 0-3 * * *"
+    - cron: "*/15 7-23 * * *"   # 04h00 às 20h45 (Brasília)
+    - cron: "*/15 0-3 * * *"    # 21h00 às 00h45 (Brasília)
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 concurrency:
   group: coleta
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   coletar:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
     environment:
       name: github-pages
+    env:
+      INLOG_USUARIO: ${{ secrets.INLOG_USUARIO }}
+      INLOG_SENHA: ${{ secrets.INLOG_SENHA }}
+      SENHA_SITE: ${{ secrets.SENHA_SITE }}
+      GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Fora do horário de coleta?
+        id: hora
+        run: |
+          h=$(TZ=America/Sao_Paulo date +%H%M)
+          if [ "$h" -ge 0100 ] && [ "$h" -lt 0350 ]; then echo "fora=1" >> "$GITHUB_OUTPUT"; echo "Fora do horário ($h)"; fi
       - uses: actions/checkout@v4
+        if: steps.hora.outputs.fora != '1'
       - uses: actions/setup-python@v5
+        if: steps.hora.outputs.fora != '1'
         with:
           python-version: "3.12"
-      - run: pip install requests==2.32.3 cryptography==43.0.3
-      - name: Coletar dados da INLOG
-        env:
-          INLOG_USUARIO: ${{ secrets.INLOG_USUARIO }}
-          INLOG_SENHA: ${{ secrets.INLOG_SENHA }}
-          SENHA_SITE: ${{ secrets.SENHA_SITE }}
-        run: python coletor/coletor.py
+      - if: steps.hora.outputs.fora != '1'
+        run: pip install requests==2.32.3 cryptography==43.0.3
+      - name: Primeira coleta
+        if: steps.hora.outputs.fora != '1'
+        run: python coletor/coletor.py || echo "primeira coleta falhou" 
       - uses: actions/configure-pages@v5
+        if: steps.hora.outputs.fora != '1'
       - uses: actions/upload-pages-artifact@v3
+        if: steps.hora.outputs.fora != '1'
         with:
           path: docs
       - uses: actions/deploy-pages@v4
+        if: steps.hora.outputs.fora != '1'
+      - name: Coletar dados da INLOG (a cada 5 min)
+        if: steps.hora.outputs.fora != '1'
+        run: |
+          publicar() {
+            rm -rf /tmp/pub && mkdir /tmp/pub && cp docs/dados.enc.json /tmp/pub/
+            cd /tmp/pub && git init -q && git add . \
+              && git -c user.name=coletor -c user.email=coletor@users.noreply.github.com commit -qm "dados $(TZ=America/Sao_Paulo date +%H:%M)" \
+              && git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:dados
+            cd "$GITHUB_WORKSPACE"
+          }
+          publicar || echo "falha ao publicar"
+          fim=$((SECONDS + 20100))   # ~5h35
+          while [ $SECONDS -lt $fim ]; do
+            sleep $((300 - $(date +%s) % 300))
+            h=$(TZ=America/Sao_Paulo date +%H%M)
+            if [ "$h" -ge 0100 ] && [ "$h" -lt 0350 ]; then echo "Fim do horário de coleta"; break; fi
+            if (python coletor/coletor.py); then publicar || echo "falha ao publicar"; else echo "coleta falhou, tento de novo em 5 min"; fi
+          done
