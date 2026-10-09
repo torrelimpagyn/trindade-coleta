@@ -20,6 +20,7 @@ PLANO = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarRotasPlanejad
 DETALHE = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarDetalhesPlanejamentoSetor?codigoSetor={c}&dt={d}&deslocamento=false"
 DIAS = {0: ("SEG",), 1: ("TER",), 2: ("QUA",), 3: ("QUI",), 4: ("SEX",), 5: ("SAB", "SÁB"), 6: ("DOM",)}
 FILTRO = "TRINDADE"
+PARADA_MIN = 300   # segundos: paradas menores são as paradas normais de coleta
 TZ = ZoneInfo("America/Sao_Paulo")
 AQUI = os.path.dirname(os.path.abspath(__file__))
 SAIDA = os.path.join(AQUI, "..", "docs", "dados.enc.json")
@@ -157,7 +158,7 @@ def main():
         info = cad["setores"].get(cod, {})
         o = {"s": cod, "turno": x.get("Turno"), "sit": (x.get("Situacao") or "").strip(), "pct": x.get("PorcentagemRound") or 0,
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
-             "veic": [x["Veiculo"]] if x.get("Veiculo") else [], "entrada": None, "dist": 0, "vel": None, "stop": 0, "lin": [],
+             "veic": [x["Veiculo"]] if x.get("Veiculo") else [], "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])]}
         pontos, t0, t1 = [], None, None
         if x.get("Controle") and x.get("CodigoSetor"):
@@ -177,7 +178,15 @@ def main():
                     t1 = t if t1 is None or t > t1 else t1
                     pos = (h["Posicao"]["Latitude"], h["Posicao"]["Longitude"])
                     pontos.append(pos)
-                o["stop"] += sum(seg(p.get("Duracao")) for p in (c.get("PontosParada") or []))
+                for p in c.get("PontosParada") or []:   # só paradas longas (>= 5 min) dentro do setor
+                    d = seg(p.get("TempoParado"))
+                    if d < PARADA_MIN or not p.get("Latitude"):
+                        continue
+                    pt = (p["Latitude"] / 1e6, p["Longitude"] / 1e6)
+                    if o["ring"] and not any(dentro(pt, r) for r in o["ring"]):
+                        continue
+                    o["par"].append([(p.get("DataHoraInicio") or "")[11:16], (p.get("DataHoraFim") or "")[11:16], d, round(pt[0], 5), round(pt[1], 5)])
+                    o["stop"] += d
         if t0 and t1 and t1 > t0:
             o["vel"] = round(o["dist"] / ((t1 - t0).total_seconds() / 3600), 1)
         o["dist"] = round(o["dist"], 1)
