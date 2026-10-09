@@ -138,6 +138,20 @@ def main():
     s = entrar()
     grid = pegar_json(s, GRID.format(d=dia))
     linhas = [x for x in grid["Data"]["Data"] if FILTRO in (x.get("MacroSetor") or "")]
+    # A INLOG repete o mesmo setor em várias linhas (uma por viagem/veículo, ou uma "ATIVO" e outra "AGUARDANDO").
+    # Fica uma linha por setor: a que tem coleta ativa; senão a executada; senão a aguardando.
+    prio = {"ATIVO": 0, "EXECUTADO": 1, "AGUARDANDO": 2}
+    melhor, veics = {}, {}
+    for x in linhas:
+        cod = (x.get("Setor") or "").split(" - ")[0].strip()
+        if x.get("Veiculo"):
+            veics.setdefault(cod, [])
+            if x["Veiculo"] not in veics[cod]:
+                veics[cod].append(x["Veiculo"])
+        chave = (prio.get((x.get("Situacao") or "").strip(), 3), 0 if x.get("Controle") else 1, -(x.get("PorcentagemRound") or 0), -len(x.get("Setor") or ""))
+        if cod not in melhor or chave < melhor[cod][0]:
+            melhor[cod] = (chave, x)
+    linhas = [v[1] for v in melhor.values()]
     # A INLOG às vezes "pendura" a coleta de hoje num registro aberto do dia anterior
     # (ex.: setor iniciado às 04h30 e contado na agenda de ontem). Nesses casos uso o registro de ontem.
     ontem = (dt.date.fromisoformat(dia) - dt.timedelta(days=1)).isoformat()
@@ -151,14 +165,14 @@ def main():
         pass
     setores = []
     for x in linhas:
-        cod = (x.get("Setor") or "").split(" - ")[0]
+        cod = (x.get("Setor") or "").split(" - ")[0].strip()
         dia_x = dia
         if (x.get("Situacao") or "").strip() == "AGUARDANDO" and not x.get("PorcentagemRound") and cod in emprestado:
             x = dict(emprestado[cod], Turno=x.get("Turno")); dia_x = ontem
         info = cad["setores"].get(cod, {})
         o = {"s": cod, "turno": x.get("Turno"), "sit": (x.get("Situacao") or "").strip(), "pct": x.get("PorcentagemRound") or 0,
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
-             "veic": [x["Veiculo"]] if x.get("Veiculo") else [], "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
+             "veic": list(veics.get(cod) or ([x["Veiculo"]] if x.get("Veiculo") else [])), "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])]}
         pontos, t0, t1 = [], None, None
         if x.get("Controle") and x.get("CodigoSetor"):
