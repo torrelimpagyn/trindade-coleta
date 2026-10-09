@@ -16,6 +16,9 @@ BASE = "https://quebec.inlog.com.br"
 LOGIN = BASE + "/Rastreamento/Apresentacao/Autenticador/Account/Login?ReturnUrl=%2FRastreamento%2FApresentacao%2FAutenticador%2F"
 GRID = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarGridPorData?data={d}"
 ROTA = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarRotaCompleta?codigoSetor={c}&dt={d}"
+PLANO = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarRotasPlanejadas?codigoSetor={c}&data={d}"
+DETALHE = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarDetalhesPlanejamentoSetor?codigoSetor={c}&dt={d}&deslocamento=false"
+DIAS = {0: ("SEG",), 1: ("TER",), 2: ("QUA",), 3: ("QUI",), 4: ("SEX",), 5: ("SAB", "SÁB"), 6: ("DOM",)}
 FILTRO = "TRINDADE"
 TZ = ZoneInfo("America/Sao_Paulo")
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -79,24 +82,44 @@ def dentro(pt, anel):
     return ok
 
 
-def trechos_executados(rota, aneis, pontos):
-    """Quebra a rota programada em pedaços de ~60 m dentro do setor e marca os que o caminhão passou (até 30 m)."""
-    grade = {}
-    for la, lo in pontos:
-        grade.setdefault((round(la / 0.0004), round(lo / 0.0004)), []).append((la, lo))
-    pcs = []
-    for a, b in zip(rota, rota[1:]):
-        n = max(1, int(dist_m(a, b) // 60))
-        for k in range(n):
-            p0 = (a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n)
-            p1 = (a[0] + (b[0] - a[0]) * (k + 1) / n, a[1] + (b[1] - a[1]) * (k + 1) / n)
-            m = ((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)
-            if not any(dentro(m, an) for an in aneis):
+def rota_inlog(s, cod, dia, ativo):
+    """Rota programada na INLOG, em trechos, marcada com os 'pacmans' que a própria INLOG já deu como cumpridos."""
+    rotas = pegar_json(s, PLANO.format(c=cod, d=dia)) or []
+    if len(rotas) > 1:   # setor com rota por dia da semana (ex.: "Rota- Quarta", "Rota- SEG/SEX")
+        wd = dt.date.fromisoformat(dia).weekday()
+        nome = lambda r: (r.get("Descricao") or "").upper().replace("QUARTA", "QUA").replace("TERÇA", "TER").replace("TERCA", "TER").replace("QUINTA", "QUI").replace("SEGUNDA", "SEG").replace("SEXTA", "SEX").replace("SÁBADO", "SAB").replace("SABADO", "SAB")
+        hoje = [r for r in rotas if any(k in nome(r) for k in DIAS[wd])]
+        rotas = hoje or rotas
+    feito = {}
+    if ativo:
+        for p in (pegar_json(s, DETALHE.format(c=cod, d=dia)) or {}).get("Pacmans") or []:
+            k = p.get("CodigoTrecho")   # trecho só conta como feito se todos os pacmans dele foram cumpridos
+            feito[k] = feito.get(k, True) and p.get("Cumprido") == "T"
+    linhas, tot, ok = [], 0, 0
+    for r in rotas:
+        com_pac = {p.get("CodigoTrecho") for p in r.get("Pacmans") or []}
+        trechos = sorted(r.get("SetorRotaTrecho") or [], key=lambda x: x.get("Sequencia") or 0)
+        st, ult = [], None
+        for tr_ in trechos:   # trecho sem pacman herda o status do trecho anterior
+            k = tr_.get("Codigo")
+            if k in com_pac:
+                ult = 1 if feito.get(k) else 0
+            st.append(ult)
+        prim = next((x for x in st if x is not None), 0)
+        st = [prim if x is None else x for x in st]
+        tot += len(com_pac); ok += sum(1 for k in com_pac if feito.get(k))
+        atual, pts = None, []
+        for tr_, v in zip(trechos, st):
+            P = [[round(q["Latitude"] / 1e6, 5), round(q["Longitude"] / 1e6, 5)] for q in sorted(tr_.get("SetorRotaTrechoPonto") or [], key=lambda q: q.get("Sequencia") or 0)]
+            P = [q for i, q in enumerate(P) if i == 0 or q != P[i - 1]]
+            if not P:
                 continue
-            k0 = (round(m[0] / 0.0004), round(m[1] / 0.0004))
-            feito = any(dist_m(m, q) <= 30 for di in (-1, 0, 1) for dj in (-1, 0, 1) for q in grade.get((k0[0] + di, k0[1] + dj), []))
-            pcs.append([round(p0[0], 5), round(p0[1], 5), round(p1[0], 5), round(p1[1], 5), 1 if feito else 0])
-    return pcs
+            if v != atual and pts:
+                linhas.append([atual, pts]); pts = [pts[-1]]
+            atual = v; pts += P
+        if pts:
+            linhas.append([atual, pts])
+    return linhas, (round(100 * ok / tot, 1) if tot else None), [r.get("Descricao") for r in rotas]
 
 
 def seg(txt):
@@ -120,7 +143,7 @@ def main():
         info = cad["setores"].get(cod, {})
         o = {"s": cod, "turno": x.get("Turno"), "sit": (x.get("Situacao") or "").strip(), "pct": x.get("PorcentagemRound") or 0,
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
-             "veic": [x["Veiculo"]] if x.get("Veiculo") else [], "entrada": None, "dist": 0, "vel": None, "stop": 0, "tr": [], "pcs": [],
+             "veic": [x["Veiculo"]] if x.get("Veiculo") else [], "entrada": None, "dist": 0, "vel": None, "stop": 0, "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])]}
         pontos, t0, t1 = [], None, None
         if x.get("Controle") and x.get("CodigoSetor"):
@@ -133,7 +156,6 @@ def main():
                 if ent and (o["entrada"] is None or ent[11:16] < o["entrada"]):
                     o["entrada"] = ent[11:16]
                 H = c.get("RastreamentoHistorico") or []
-                ult = -1e9
                 for h in H:
                     o["dist"] += (h.get("Distancia") or 0) / 1000
                     t = dt.datetime.fromisoformat(h["DataHoraCompleta"][:19])
@@ -141,17 +163,19 @@ def main():
                     t1 = t if t1 is None or t > t1 else t1
                     pos = (h["Posicao"]["Latitude"], h["Posicao"]["Longitude"])
                     pontos.append(pos)
-                    mm = t.hour * 60 + t.minute + t.second / 60
-                    if mm - ult >= 0.5:
-                        o["tr"].append([round(mm, 1), round(pos[0], 5), round(pos[1], 5)]); ult = mm
                 o["stop"] += sum(seg(p.get("Duracao")) for p in (c.get("PontosParada") or []))
         if t0 and t1 and t1 > t0:
             o["vel"] = round(o["dist"] / ((t1 - t0).total_seconds() / 3600), 1)
         o["dist"] = round(o["dist"], 1)
-        if info.get("rota") and pontos:
-            o["pcs"] = trechos_executados(dec(info["rota"]), o["ring"], pontos)
+        if x.get("CodigoSetor"):
+            try:
+                o["lin"], o["pctmapa"], o["rotas"] = rota_inlog(s, x["CodigoSetor"], dia, bool(x.get("Controle")))
+            except SystemExit:
+                raise
+            except Exception as e:   # sem rota programada: o card continua funcionando
+                print("  rota", cod, "indisponível:", e)
         setores.append(o)
-        print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km")
+        print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%")
     dados = {"dia": dia, "at": agora.strftime("%H:%M"), "garagem": cad["garagem"], "S": setores}
     criptografar(json.dumps(dados, separators=(",", ":")).encode())
 
