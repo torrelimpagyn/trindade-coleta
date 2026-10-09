@@ -70,5 +70,6 @@ jobs:
             sleep $((300 - $(date +%s) % 300))
             h=$(TZ=America/Sao_Paulo date +%H%M)
             if [ "$h" -ge 0100 ] && [ "$h" -lt 0350 ]; then echo "Fim do horário de coleta"; break; fi
+            git pull -q --ff-only origin main || true   # usa sempre a versão mais nova do coletor
             if (python coletor/coletor.py); then publicar || echo "falha ao publicar"; else echo "coleta falhou, tento de novo em 5 min"; fi
           done
