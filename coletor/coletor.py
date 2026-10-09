@@ -82,11 +82,11 @@ def dentro(pt, anel):
     return ok
 
 
-def rota_inlog(s, cod, dia, ativo):
+def rota_inlog(s, cod, dia, ativo, dia_semana=None):
     """Rota programada na INLOG, em trechos, marcada com os 'pacmans' que a própria INLOG já deu como cumpridos."""
     rotas = pegar_json(s, PLANO.format(c=cod, d=dia)) or []
     if len(rotas) > 1:   # setor com rota por dia da semana (ex.: "Rota- Quarta", "Rota- SEG/SEX")
-        wd = dt.date.fromisoformat(dia).weekday()
+        wd = dt.date.fromisoformat(dia_semana or dia).weekday()
         nome = lambda r: (r.get("Descricao") or "").upper().replace("QUARTA", "QUA").replace("TERÇA", "TER").replace("TERCA", "TER").replace("QUINTA", "QUI").replace("SEGUNDA", "SEG").replace("SEXTA", "SEX").replace("SÁBADO", "SAB").replace("SABADO", "SAB")
         hoje = [r for r in rotas if any(k in nome(r) for k in DIAS[wd])]
         rotas = hoje or rotas
@@ -137,9 +137,23 @@ def main():
     s = entrar()
     grid = pegar_json(s, GRID.format(d=dia))
     linhas = [x for x in grid["Data"]["Data"] if FILTRO in (x.get("MacroSetor") or "")]
+    # A INLOG às vezes "pendura" a coleta de hoje num registro aberto do dia anterior
+    # (ex.: setor iniciado às 04h30 e contado na agenda de ontem). Nesses casos uso o registro de ontem.
+    ontem = (dt.date.fromisoformat(dia) - dt.timedelta(days=1)).isoformat()
+    ddmm = dia[8:10] + "/" + dia[5:7]
+    emprestado = {}
+    try:
+        for y in pegar_json(s, GRID.format(d=ontem))["Data"]["Data"]:
+            if FILTRO in (y.get("MacroSetor") or "") and (y.get("DisplayDataInicioAtividade") or "").startswith(ddmm):
+                emprestado[(y.get("Setor") or "").split(" - ")[0]] = y
+    except SystemExit:
+        pass
     setores = []
     for x in linhas:
         cod = (x.get("Setor") or "").split(" - ")[0]
+        dia_x = dia
+        if (x.get("Situacao") or "").strip() == "AGUARDANDO" and not x.get("PorcentagemRound") and cod in emprestado:
+            x = dict(emprestado[cod], Turno=x.get("Turno")); dia_x = ontem
         info = cad["setores"].get(cod, {})
         o = {"s": cod, "turno": x.get("Turno"), "sit": (x.get("Situacao") or "").strip(), "pct": x.get("PorcentagemRound") or 0,
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
@@ -147,7 +161,7 @@ def main():
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])]}
         pontos, t0, t1 = [], None, None
         if x.get("Controle") and x.get("CodigoSetor"):
-            for c in pegar_json(s, ROTA.format(c=x["CodigoSetor"], d=dia)) or []:
+            for c in pegar_json(s, ROTA.format(c=x["CodigoSetor"], d=dia_x)) or []:
                 v = (c.get("Veiculo") or {}).get("Identificador")
                 if v and v not in o["veic"]:
                     o["veic"].append(v)
@@ -169,7 +183,7 @@ def main():
         o["dist"] = round(o["dist"], 1)
         if x.get("CodigoSetor"):
             try:
-                o["lin"], o["pctmapa"], o["rotas"] = rota_inlog(s, x["CodigoSetor"], dia, bool(x.get("Controle")))
+                o["lin"], o["pctmapa"], o["rotas"] = rota_inlog(s, x["CodigoSetor"], dia_x, bool(x.get("Controle")), dia)
             except SystemExit:
                 raise
             except Exception as e:   # sem rota programada: o card continua funcionando
