@@ -42,7 +42,7 @@ header h1{font-size:17px;margin:0}header .s{font-size:12.5px;opacity:.9;margin-t
 <div class="wrap" id="app" hidden>
  <div class="tabs"><button data-t="MATUTINO" class="on">Manhã</button><button data-t="VESPERTINO">Tarde</button></div>
  <div class="sum" id="sum"></div><div id="list"></div>
- <div class="note">Dados da INLOG, atualizados a cada 15 minutos (a página recarrega sozinha). Percentual executado = percentual da própria INLOG. No mapa, o executado é estimado pelo GPS sobre a rota programada.</div>
+ <div class="note">Dados da INLOG, atualizados a cada 15 minutos (a página recarrega sozinha). Percentual executado = percentual da própria INLOG. No mapa aparece a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar.</div>
 </div>
 <div id="sheet"><div class="hd"><button id="back">‹ Voltar</button><h2 id="shT"></h2></div><div id="map"></div><div class="ft" id="shF"></div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -66,7 +66,7 @@ function render(){
    <div class="kv"><span>Velocidade média</span><b>${s.vel?nf(s.vel,1)+' km/h':'—'}</b></div>
    <div class="kv"><span>Tempo de parada nesta rota</span><b>${s.stop?hm(s.stop):'—'}</b></div>
    <div class="kv"><span>Última posição</span><b>${s.ult||'—'}</b></div>
-   ${s.tr.length?`<button class="btn" data-m="${s.s}">Ver no mapa</button>`:''}</div></div>`}).join('');
+   ${(s.lin||[]).length?`<button class="btn" data-m="${s.s}">Ver no mapa</button>`:''}</div></div>`}).join('');
  document.querySelectorAll('.sh').forEach(h=>h.onclick=()=>{const c=h.parentNode.dataset.c;OPEN.has(c)?OPEN.delete(c):OPEN.add(c);render()});
  document.querySelectorAll('.btn[data-m]').forEach(b=>b.onclick=e=>{e.stopPropagation();openMap(b.dataset.m)});
 }
@@ -77,13 +77,12 @@ function openMap(c){const s=D.S.find(x=>x.s===c);document.getElementById('sheet'
   lay=L.layerGroup().addTo(map);try{new ResizeObserver(()=>map.invalidateSize({pan:false})).observe(document.getElementById('map'))}catch(e){}}
  lay.clearLayers();
  s.ring.forEach(r=>L.polygon(r,{color:'#555',weight:1.5,dashArray:'5 4',fill:false}).addTo(lay));
- L.polyline(s.pcs.filter(p=>!p[4]).map(p=>[[p[0],p[1]],[p[2],p[3]]]),{color:'#d13b30',weight:4,opacity:.85}).addTo(lay);
- L.polyline(s.pcs.filter(p=>p[4]).map(p=>[[p[0],p[1]],[p[2],p[3]]]),{color:'#1a8a4a',weight:5}).addTo(lay);
- if(s.tr.length>1)L.polyline(s.tr.map(q=>[q[1],q[2]]),{color:'#2a78d6',weight:1.5,opacity:.6}).addTo(lay);
+ const L0=s.lin||[];L.polyline(L0.filter(l=>!l[0]).map(l=>l[1]),{color:'#d13b30',weight:4,opacity:.9}).addTo(lay);
+ L.polyline(L0.filter(l=>l[0]).map(l=>l[1]),{color:'#1a8a4a',weight:4.5}).addTo(lay);
  if(s.pos&&s.sit==='ATIVO')L.marker(s.pos,{icon:L.divIcon({className:'',html:'<div class="truck"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(lay);
  document.getElementById('shT').textContent='Setor '+s.s+' · '+nf(s.pct)+'%';
- document.getElementById('shF').innerHTML=`${(s.veic||[]).join(', ')} · última posição ${s.ult||'—'}<div class="leg"><span><i style="background:#1a8a4a"></i>Executado</span><span><i style="background:#d13b30"></i>Falta executar</span><span><i style="background:#2a78d6;height:2px"></i>Trajeto do caminhão</span></div>`;
- setTimeout(()=>{map.invalidateSize();map.fitBounds(L.latLngBounds(s.ring.flat()),{padding:[20,20]})},30);}
+ document.getElementById('shF').innerHTML=`${(s.veic||[]).join(', ')} · última posição ${s.ult||'—'}<div class="leg"><span><i style="background:#1a8a4a"></i>Executado</span><span><i style="background:#d13b30"></i>Falta executar</span></div>`;
+ setTimeout(()=>{map.invalidateSize();map.fitBounds(L.latLngBounds((s.lin||[]).length?s.lin.flatMap(l=>l[1]):s.ring.flat()),{padding:[20,20]})},30);}
 document.getElementById('back').onclick=()=>document.getElementById('sheet').classList.remove('open');
 document.querySelectorAll('.tabs button').forEach(b=>{b.classList.toggle('on',b.dataset.t===TURNO);b.onclick=()=>{TURNO=b.dataset.t;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));render()}});
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
