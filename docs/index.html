@@ -28,6 +28,106 @@ header h1{font-size:17px;margin:0}header .s{font-size:12.5px;opacity:.9;margin-t
 .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}.kv span{color:var(--mut)}.kv b{font-weight:700}
 .kv:last-of-type{border-bottom:0}
 .btn{display:block;width:100%;margin-top:10px;border:1px solid var(--g);color:var(--g);background:var(--card);border-radius:10px;padding:9px;font:inherit;font-weight:700}
+.st-w{color:var(--mut)}.st-a{color:var(--g)}.st-e{color:var(--amb)}.st-r{color:var(--red)}
+#sheet{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;flex-direction:column}#sheet.open{display:flex}
+#sheet .hd{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;background:var(--card);border-bottom:1px solid var(--line)}
+#sheet .hd button{border:0;background:var(--soft);border-radius:10px;padding:8px 12px;font:inherit;font-weight:600;color:var(--ink)}#sheet .hd h2{font-size:16px;margin:0}
+#map{flex:1;min-height:0}#sheet .ft{background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));font-size:13px}
+.leg{display:flex;gap:12px;flex-wrap:wrap;color:var(--mut);font-size:12px;margin-top:4px}.leg i{display:inline-block;width:16px;height:4px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.truck{background:#2a78d6;border:2px solid #fff;border-radius:50%;width:18px;height:18px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.lock{max-width:360px;margin:60px auto;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}.lock input{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin:10px 0;background:var(--bg);color:var(--ink)}.lock button{width:100%;border:0;background:var(--g);color:#fff;border-radius:10px;padding:10px;font:inherit;font-weight:700}.err{color:var(--red);font-size:13px;margin-top:8px}.note{color:var(--mut);font-size:11.5px;text-align:center;margin-top:14px}
+</style></head><body>
+<header><h1>Coleta Trindade · Hoje</h1><div class="s" id="sub"></div></header>
+<div class="lock" id="lock" hidden><b>Acesso restrito</b><div style="color:var(--mut);font-size:13px">Digite a senha para ver a coleta de Trindade.</div><input id="pw" type="password" autocomplete="current-password" placeholder="Senha"><button id="go">Entrar</button><div class="err" id="err"></div></div>
+<div class="wrap" id="app" hidden>
+ <div class="tabs"><button data-t="MATUTINO" class="on">Manhã</button><button data-t="VESPERTINO">Tarde</button></div>
+ <div class="sum" id="sum"></div><div id="list"></div>
+ <div class="note">Dados da INLOG, atualizados a cada 15 minutos (a página recarrega sozinha). Percentual executado = percentual da própria INLOG. No mapa, o executado é estimado pelo GPS sobre a rota programada.</div>
+</div>
+<div id="sheet"><div class="hd"><button id="back">‹ Voltar</button><h2 id="shT"></h2></div><div id="map"></div><div class="ft" id="shF"></div></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let D=null;let TURNO=(new Date().getHours()>=14)?'VESPERTINO':'MATUTINO',OPEN=new Set();
+const nf=(v,d=0)=>Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
+const hm=s=>{const h=Math.floor(s/3600),m=Math.round(s%3600/60);return h?`${h}h ${String(m).padStart(2,'0')}min`:`${m} min`};
+const SIT={ATIVO:['Em execução','st-a'],AGUARDANDO:['Aguardando','st-w'],EXECUTADO:['Finalizado','st-e']};
+function render(){
+ const [y,mo,da]=D.dia.split('-');document.getElementById('sub').textContent=`${da}/${mo}/${y} · atualizado às ${D.at}`;
+ const S=D.S.filter(s=>s.turno===TURNO);
+ const inc=S.filter(s=>s.sit==='EXECUTADO'&&s.pct<90).length,at=S.filter(s=>s.sit==='ATIVO').length,ag=S.filter(s=>s.sit==='AGUARDANDO').length,av=S.reduce((a,s)=>a+s.pct,0)/S.length;
+ document.getElementById('sum').innerHTML=`<div><b>${nf(av)}%</b><small>média executada</small></div><div><b>${at}</b><small>em execução</small></div><div><b>${ag}</b><small>aguardando saída</small></div>${inc?`<div style="grid-column:1/-1;border-color:var(--red);background:var(--redbg)"><b style="font-size:15px;color:var(--red)">${inc} setor${inc>1?'es':''} encerrado${inc>1?'s':''} sem concluir</b><small>A INLOG fechou o setor com menos de 90% executado</small></div>`:''}`;
+ document.getElementById('list').innerHTML=S.map(s=>{const inc=s.sit==='EXECUTADO'&&s.pct<90;const st=inc?['Encerrado sem concluir','st-r']:(SIT[s.sit]||[s.sit,'st-w']);return `<div class="sec ${OPEN.has(s.s)?'open':''}" data-c="${s.s}">
+  <div class="sh"><span class="tag">RSU</span><span class="nm">${s.s}<span class="sit ${st[1]}">${st[0]}</span></span><span class="pc"${inc?' style="color:var(--red)"':''}>${nf(s.pct)}%</span><span class="ch">▼</span></div>
+  <div class="bar"><span style="width:${s.pct}%${inc?';background:var(--red)':''}"></span></div>
+  <div class="det"><span class="pill">${s.s}</span>
+   <div class="kv"><span>Entrada no setor</span><b>${s.entrada||'—'}</b></div>
+   ${(s.veic.length?s.veic:['—']).map((v,i)=>`<div class="kv"><span>Veículo ${i+1}</span><b>${v}</b></div>`).join('')}
+   <div class="kv"><span>Distância percorrida</span><b>${s.dist?nf(s.dist,1)+' km':'—'}</b></div>
+   <div class="kv"><span>Velocidade média</span><b>${s.vel?nf(s.vel,1)+' km/h':'—'}</b></div>
+   <div class="kv"><span>Tempo de parada nesta rota</span><b>${s.stop?hm(s.stop):'—'}</b></div>
+   <div class="kv"><span>Última posição</span><b>${s.ult||'—'}</b></div>
+   ${s.tr.length?`<button class="btn" data-m="${s.s}">Ver no mapa</button>`:''}</div></div>`}).join('');
+ document.querySelectorAll('.sh').forEach(h=>h.onclick=()=>{const c=h.parentNode.dataset.c;OPEN.has(c)?OPEN.delete(c):OPEN.add(c);render()});
+ document.querySelectorAll('.btn[data-m]').forEach(b=>b.onclick=e=>{e.stopPropagation();openMap(b.dataset.m)});
+}
+let map,lay;
+function openMap(c){const s=D.S.find(x=>x.s===c);document.getElementById('sheet').classList.add('open');
+ if(!map){map=L.map('map');const tl=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri',keepBuffer:4}).addTo(map);
+  tl.on('tileerror',e=>{const t=e.tile,n=(+t.dataset.r||0)+1;if(n<4){t.dataset.r=n;setTimeout(()=>{t.src=t.src.split('?_r=')[0]+'?_r='+n},600*n)}});
+  lay=L.layerGroup().addTo(map);try{new ResizeObserver(()=>map.invalidateSize({pan:false})).observe(document.getElementById('map'))}catch(e){}}
+ lay.clearLayers();
+ s.ring.forEach(r=>L.polygon(r,{color:'#555',weight:1.5,dashArray:'5 4',fill:false}).addTo(lay));
+ L.polyline(s.pcs.filter(p=>!p[4]).map(p=>[[p[0],p[1]],[p[2],p[3]]]),{color:'#d13b30',weight:4,opacity:.85}).addTo(lay);
+ L.polyline(s.pcs.filter(p=>p[4]).map(p=>[[p[0],p[1]],[p[2],p[3]]]),{color:'#1a8a4a',weight:5}).addTo(lay);
+ if(s.tr.length>1)L.polyline(s.tr.map(q=>[q[1],q[2]]),{color:'#2a78d6',weight:1.5,opacity:.6}).addTo(lay);
+ if(s.pos&&s.sit==='ATIVO')L.marker(s.pos,{icon:L.divIcon({className:'',html:'<div class="truck"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(lay);
+ document.getElementById('shT').textContent='Setor '+s.s+' · '+nf(s.pct)+'%';
+ document.getElementById('shF').innerHTML=`${(s.veic||[]).join(', ')} · última posição ${s.ult||'—'}<div class="leg"><span><i style="background:#1a8a4a"></i>Executado</span><span><i style="background:#d13b30"></i>Falta executar</span><span><i style="background:#2a78d6;height:2px"></i>Trajeto do caminhão</span></div>`;
+ setTimeout(()=>{map.invalidateSize();map.fitBounds(L.latLngBounds(s.ring.flat()),{padding:[20,20]})},30);}
+document.getElementById('back').onclick=()=>document.getElementById('sheet').classList.remove('open');
+document.querySelectorAll('.tabs button').forEach(b=>{b.classList.toggle('on',b.dataset.t===TURNO);b.onclick=()=>{TURNO=b.dataset.t;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));render()}});
+const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function abrir(pw){const r=await fetch('dados.enc.json?t='+Date.now(),{cache:'no-store'});const e=await r.json();
+ const k0=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
+ const k=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(e.sal),iterations:200000,hash:'SHA-256'},k0,{name:'AES-GCM',length:256},false,['decrypt']);
+ const raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(e.iv)},k,b64(e.dados));return JSON.parse(new TextDecoder().decode(raw))}
+async function carregar(){const pw=localStorage.getItem('tc_pw');if(!pw){document.getElementById('lock').hidden=false;return}
+ try{D=await abrir(pw);document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;render()}
+ catch(e){localStorage.removeItem('tc_pw');document.getElementById('app').hidden=true;document.getElementById('lock').hidden=false;document.getElementById('err').textContent='Senha incorreta ou dados indisponíveis.'}}
+document.getElementById('go').onclick=()=>{try{localStorage.setItem('tc_pw',document.getElementById('pw').value)}catch(e){}carregar()};
+document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
+carregar();setInterval(()=>{if(D&&!document.getElementById('sheet').classList.contains('open'))carregar()},120000);
+</script></body></html>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#1f5f45">
+<title>Coleta Trindade · Hoje</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#f3f6f4;--card:#fff;--ink:#14231c;--mut:#5d6b64;--line:#e2e9e5;--g:#2f6b52;--g2:#6cc49a;--gbg:#eef7f2;--soft:#f6faf8;--red:#c9302c;--redbg:#fbeaea;--amb:#b7791f;--ambbg:#fdf3e1}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1512;--card:#17201b;--ink:#e9f1ec;--mut:#9fb0a7;--line:#26332c;--gbg:#183026;--soft:#1b2620;--redbg:#3a1615;--ambbg:#3a2a12}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:0;z-index:20;background:var(--g);color:#fff;padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
+header h1{font-size:17px;margin:0}header .s{font-size:12.5px;opacity:.9;margin-top:2px}
+.wrap{max-width:760px;margin:0 auto;padding:12px 16px 40px}
+.tabs{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;margin-bottom:12px}
+.tabs button{flex:1;border:0;background:none;padding:8px;border-radius:9px;font:inherit;font-weight:600;color:var(--mut)}
+.tabs button.on{background:var(--g);color:#fff}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.sum div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}.sum b{display:block;font-size:20px}.sum small{color:var(--mut);font-size:11.5px}
+.sec{background:var(--card);border:1px solid #cfe6da;border-radius:12px;margin-bottom:10px;overflow:hidden}
+@media(prefers-color-scheme:dark){.sec{border-color:var(--line)}}
+.sh{display:flex;align-items:center;gap:12px;padding:12px 14px 6px;cursor:pointer}
+.tag{font-size:11px;font-weight:700;color:var(--g);background:var(--gbg);border-radius:6px;padding:3px 7px}
+.sh .nm{font-weight:700;font-size:15.5px}.sh .sit{font-size:11.5px;color:var(--mut);margin-left:6px;font-weight:600}
+.sh .pc{margin-left:auto;font-weight:800;color:var(--g);font-size:16px}
+.sh .ch{color:var(--mut);font-size:12px;transition:transform .2s}.sec.open .ch{transform:rotate(180deg)}
+.bar{height:7px;background:var(--line);border-radius:4px;margin:2px 14px 12px;overflow:hidden}.bar span{display:block;height:100%;background:var(--g2);border-radius:4px}
+.det{display:none;background:var(--soft);border-top:1px solid var(--line);padding:10px 14px 12px}.sec.open .det{display:block}
+.pill{display:inline-block;background:var(--g);color:#fff;font-weight:700;font-size:12px;border-radius:12px;padding:3px 10px;margin:2px 0 8px}
+.kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}.kv span{color:var(--mut)}.kv b{font-weight:700}
+.kv:last-of-type{border-bottom:0}
+.btn{display:block;width:100%;margin-top:10px;border:1px solid var(--g);color:var(--g);background:var(--card);border-radius:10px;padding:9px;font:inherit;font-weight:700}
 .st-w{color:var(--mut)}.st-a{color:var(--g)}.st-e{color:var(--amb)}
 #sheet{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;flex-direction:column}#sheet.open{display:flex}
 #sheet .hd{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;background:var(--card);border-bottom:1px solid var(--line)}
