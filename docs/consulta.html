@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Consulta de endereço · Trindade</title>
+<script>document.documentElement.className+=" js";</script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{
+  color-scheme:light;
+  --page:#f4f5f7; --card:#ffffff; --ink:#111318; --ink2:#4a4f5a; --muted:#80858f; --line:#e3e5ea; --soft:#f1f3f6;
+  --accent:#1f6feb; --accent-ink:#ffffff; --shadow:0 8px 28px rgba(16,24,40,.16),0 2px 6px rgba(16,24,40,.08);
+  --g-dia:#d6457c; --g-sqs-m:#2a78d6; --g-sqs-v:#e8662f; --g-tqs-m:#159a6b; --g-tqs-v:#d39200;
+  --ok:#0f8a3c;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --page:#0e1013; --card:#181b20; --ink:#f2f3f5; --ink2:#c2c6ce; --muted:#8b909a; --line:#2a2e35; --soft:#22262d;
+    --accent:#4c8df5; --shadow:0 8px 28px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{ color-scheme:dark;
+  --page:#0e1013; --card:#181b20; --ink:#f2f3f5; --ink2:#c2c6ce; --muted:#8b909a; --line:#2a2e35; --soft:#22262d;
+  --accent:#4c8df5; --shadow:0 8px 28px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.4); }
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--page);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.jsonly{display:none} html.js .jsonly{display:block} html.js .static{display:none}
+#app{position:fixed;inset:0}
+#map{position:absolute;inset:0;background:#e8e6e1}
+.panel{position:absolute;z-index:1000;left:16px;top:16px;width:384px;max-height:calc(100% - 32px);display:flex;flex-direction:column;gap:10px;pointer-events:none}
+.panel>*{pointer-events:auto}
+.box{background:var(--card);border-radius:14px;box-shadow:var(--shadow);border:1px solid var(--line)}
+.head{padding:14px 16px 12px}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;flex:none}
+.logo svg{width:20px;height:20px}
+.brand h1{font-size:16px;margin:0;font-weight:700;letter-spacing:-.01em}
+.brand p{margin:0;font-size:12.5px;color:var(--ink2)}
+.search{position:relative;margin-top:12px}
+.search input{width:100%;font:inherit;font-size:15px;color:var(--ink);background:var(--soft);border:1.5px solid transparent;border-radius:10px;padding:11px 74px 11px 38px;outline:none}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+.search input:focus{border-color:var(--accent);background:var(--card)}
+.search .ic{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--muted)}
+.search .clr{position:absolute;right:42px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 6px;display:none}
+.search .gps{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;cursor:pointer;padding:6px;color:var(--accent);border-radius:8px}
+.search .gps:hover{background:var(--soft)}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 6px);background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);max-height:min(420px,60vh);overflow:auto;display:none;z-index:5}
+.sugg .grp{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:8px 12px 4px}
+.sugg button{display:flex;width:100%;text-align:left;gap:10px;align-items:flex-start;border:0;background:none;padding:8px 12px;font:inherit;color:var(--ink);cursor:pointer}
+.sugg button:hover,.sugg button.on{background:var(--soft)}
+.sugg .t{font-weight:600}
+.sugg .s{font-size:12px;color:var(--ink2)}
+.sugg .k{flex:none;margin-top:2px;width:18px;height:18px;color:var(--muted)}
+.sugg .empty{padding:12px;color:var(--ink2)}
+.chipS{display:inline-block;font-size:11px;font-weight:700;color:#fff;border-radius:6px;padding:1px 6px;margin-left:4px;vertical-align:1px}
+.res{padding:14px 16px;overflow:auto}
+.res:empty{display:none}
+.res h2{font-size:13px;margin:0 0 2px;color:var(--ink2);font-weight:600}
+.res .addr{font-size:15px;font-weight:700;margin:0 0 10px}
+.sec{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:8px}
+.sec .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.badge{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:13px}
+.badge i{width:12px;height:12px;border-radius:4px;display:inline-block}
+.today{font-size:11.5px;font-weight:700;color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent);padding:2px 8px;border-radius:999px}
+.row{display:flex;gap:10px;align-items:flex-start;margin:7px 0}
+.row svg{flex:none;width:18px;height:18px;margin-top:1px;color:var(--accent)}
+.row b{display:block;font-size:14px}
+.row span{font-size:12.5px;color:var(--ink2)}
+.big{font-size:20px!important;letter-spacing:-.01em}
+.muted{color:var(--muted);font-size:12px}
+.warn{background:color-mix(in srgb,#d03b3b 10%,transparent);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:13px}
+.legend{padding:10px 14px}
+.legend .lt{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--ink2);font-weight:600;margin-bottom:6px}
+.legend .items{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:12px;color:var(--ink2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.toggle{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--ink);user-select:none}
+.toggle input{accent-color:var(--accent)}
+.ctl{position:absolute;right:12px;top:12px;z-index:1000;display:flex;gap:6px}
+.ctl button{font:inherit;font-size:12.5px;font-weight:600;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 11px;cursor:pointer;box-shadow:var(--shadow)}
+.ctl button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.leaflet-popup-content-wrapper{border-radius:12px;box-shadow:var(--shadow);background:var(--card);color:var(--ink)}
+.leaflet-popup-tip{background:var(--card)}
+.leaflet-popup-content{margin:12px 14px;min-width:220px;font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+.pp h3{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
+.pp .row{margin:5px 0}
+.pp .row svg{width:16px;height:16px}
+.lbl{background:none;border:0;box-shadow:none;font:700 11px system-ui,sans-serif;color:#111;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff}
+.lbl::before{display:none}
+.leaflet-container{font:inherit}
+.pin{width:26px;height:26px;border-radius:50% 50% 50% 0;background:var(--accent);transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+@media (max-width:720px){
+  .panel{left:8px;right:8px;top:8px;width:auto;max-height:none;bottom:auto}
+  .head{padding:10px 12px}
+  .brand p{display:none}
+  .search{margin-top:8px}
+  .res{position:fixed;left:8px;right:8px;bottom:8px;max-height:52vh;background:var(--card);border-radius:14px;box-shadow:var(--shadow);border:1px solid var(--line)}
+  .legend{display:none}
+  .ctl{top:auto;bottom:16px;right:12px}
+  body.hasres .ctl{display:none}
+  .sheetclose{display:block!important}
+  .leaflet-control-zoom{display:none}
+}
+.sheetclose{display:none;position:sticky;top:-14px;margin:-6px -6px 0 auto;float:right;border:0;background:var(--soft);color:var(--ink2);border-radius:999px;width:28px;height:28px;font-size:16px;cursor:pointer}
+/* versão sem JavaScript */
+.static{max-width:980px;margin:0 auto;padding:18px 14px 40px;background:var(--page)}
+.static h1{font-size:20px;margin:0 0 4px}
+.static table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border-radius:10px;overflow:hidden}
+.static th,.static td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.static th{color:var(--ink2);font-weight:600}
+.static details{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:8px 12px}
+.static summary{font-weight:700;cursor:pointer}
+.static .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
+.back{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:600;color:var(--accent);text-decoration:none;margin-left:auto;white-space:nowrap}
+.ult{background:color-mix(in srgb,var(--ok) 10%,transparent);border-radius:10px;padding:9px 11px;margin-top:8px;font-size:13px}
+.ult b{font-size:14.5px}
+.ult.old{background:color-mix(in srgb,#d39200 14%,transparent)}
+.ult.none{background:var(--soft);color:var(--ink2)}
+.ult a{color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<div class="jsonly" id="app">
+  <div id="map" role="application" aria-label="Mapa dos setores de coleta"></div>
+  <div class="panel">
+    <div class="box head">
+      <div class="brand">
+        <div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></div>
+        <div><h1>Consulta de endereço</h1><p>Setor, horário e última coleta da rua</p></div><a class="back" href="./">‹ Painel</a>
+      </div>
+      <div class="search">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" autocomplete="off" placeholder="Rua, número, bairro ou setor" aria-label="Pesquisar endereço">
+        <button class="clr" id="clr" aria-label="Limpar">×</button>
+        <button class="gps" id="gps" title="Usar minha localização" aria-label="Usar minha localização"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg></button>
+        <div class="sugg" id="sugg" role="listbox"></div>
+      </div>
+    </div>
+    <div class="box res" id="res"></div>
+  </div>
+  <div class="ctl"><button id="bMapa" aria-pressed="true">Mapa</button><button id="bSat" aria-pressed="false">Satélite</button><button id="bTema" title="Tema claro/escuro">◐</button></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+let C;
+// ---------- última coleta (dados do painel, protegidos por senha)
+const RAW = 'https://raw.githubusercontent.com/torrelimpagyn/trindade-coleta/dados/dados.enc.json';
+const EPOCA = new Date(2026, 0, 1).getTime();
+let ULT = null, ULT_AT = '', ULT_ERR = '';
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function carregarUlt(){
+  let pw = null; try { pw = localStorage.getItem('tc_pw'); } catch (e) {}
+  if (!pw){ ULT_ERR = 'senha'; return; }
+  try {
+    let e; try { const r = await fetch(RAW + '?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) e = await r.json(); } catch (x) {}
+    if (!e) e = await (await fetch('dados.enc.json?t=' + Date.now(), { cache: 'no-store' })).json();
+    const k0 = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+    const k = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64(e.sal), iterations: 200000, hash: 'SHA-256' }, k0, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    const D = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(e.iv) }, k, b64(e.dados))));
+    ULT = D.ruas || null; ULT_AT = D.at; if (!ULT) ULT_ERR = 'sem';
+  } catch (e) { ULT_ERR = 'senha'; }
+}
+function decodeGrid(g){
+  const col = g.col, out = []; let si = 0, i = 0, j = 0;
+  for (let k = 0; k < col.si.length; k++){
+    const nsi = k ? si + col.si[k] : col.si[0], ni = k ? i + col.i[k] : col.i[0];
+    const nj = (k && ni === i && nsi === si) ? j + col.j[k] : col.j[k];
+    si = nsi; i = ni; j = nj; const m = col.med[k];
+    out.push([i, j, si, m, m - col.d20[k], m + col.d80[k], col.n[k]]);
+  }
+  g.c = out; return g;
+}
+fetch('consulta_dados.json').then(r => r.json()).then(d => { C = d; decodeGrid(C.grid); app(); carregarUlt().then(() => { const r = document.querySelector('#res'); if (window.__ultimo) window.__ultimo(); }); });
+function app(){
+function quando(m){
+  const d = new Date(EPOCA + m * 60000), hoje = new Date(); hoje.setHours(0,0,0,0);
+  const d0 = new Date(d); d0.setHours(0,0,0,0); const dias = Math.round((hoje - d0) / 864e5);
+  const h = String(d.getHours()).padStart(2,'0') + 'h' + String(d.getMinutes()).padStart(2,'0');
+  const dia = dias === 0 ? 'Hoje' : dias === 1 ? 'Ontem' : `${NOMEDIA[d.getDay()].replace(/^./, c => c.toUpperCase())}, ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+  return { txt: `${dia} às ${h}`, dias };
+}
+function ultimaHTML(i, perto){
+  const lbl = perto ? 'Última coleta na rua mais próxima' : 'Última coleta nesta rua';
+  if (ULT_ERR === 'senha') return `<div class="ult none">${lbl}: <a href="./">entre no painel</a> com a senha para ver.</div>`;
+  if (!ULT) return `<div class="ult none">${lbl}: carregando…</div>`;
+  const m = ULT[i];
+  if (!m) return `<div class="ult none">${lbl}: <b>sem registro nos últimos dias</b><br><span class="muted">O GPS dos caminhões não passou por esta rua no período registrado.</span></div>`;
+  const q = quando(m);
+  return `<div class="ult ${q.dias >= 3 ? 'old' : ''}">${lbl}<br><b>${q.txt}</b><br><span class="muted">Pelo GPS do caminhão de coleta (INLOG) · atualizado às ${ULT_AT}</span></div>`;
+}
+let RUAPTS = null;
+function ruaPerto(la, lo){
+  if (!RUAPTS){ RUAPTS = new Map(); ST.forEach(st => decG(st.g).forEach(l => l.forEach(p => { const k = Math.round(p[0]/0.0005)+','+Math.round(p[1]/0.0005); if (!RUAPTS.has(k)) RUAPTS.set(k, []); RUAPTS.get(k).push([p[0], p[1], st.i]); }))); }
+  const k0 = [Math.round(la/0.0005), Math.round(lo/0.0005)]; let best = null, bd = 1e9; const cs = Math.cos(la*Math.PI/180);
+  for (let di=-1; di<=1; di++) for (let dj=-1; dj<=1; dj++) for (const p of (RUAPTS.get((k0[0]+di)+','+(k0[1]+dj)) || [])){ const d = Math.hypot((p[0]-la)*110574, (p[1]-lo)*111320*cs); if (d < bd){ bd = d; best = p[2]; } }
+  return bd <= 60 ? best : null;
+}
+
+const $ = s => document.querySelector(s);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const norm = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hm = m => { m = Math.round(m) % 1440; return `${String(Math.floor(m/60)).padStart(2,'0')}h${String(m%60).padStart(2,'0')}`; };
+C.sectors.forEach(s => { if (s.turno === 'MATUTINO'){ s.ini = 240; s.fim = 740; } else { s.ini = 900; s.fim = 1400; } });
+const SEC = Object.fromEntries(C.sectors.map(s => [s.code, s]));
+const NOMEDIA = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+// grupos de cor
+const grpKey = s => s.freq === 'DIARIO' ? 'dia' : (s.freq === 'SEG/QUA/SEX' ? 'sqs' : 'tqs') + (s.turno === 'MATUTINO' ? '-m' : '-v');
+const GRPS = [['sqs-m','Seg/Qua/Sex · manhã'],['sqs-v','Seg/Qua/Sex · tarde e noite'],['tqs-m','Ter/Qui/Sáb · manhã'],['tqs-v','Ter/Qui/Sáb · tarde e noite'],['dia','Todos os dias · manhã']];
+const colOf = s => css('--g-' + grpKey(s));
+const turnoTxt = s => s.turno === 'MATUTINO' ? 'Matutino' : 'Vespertino';
+const jsDows = s => s.dow.map(d => (d + 1) % 7);          // 0=domingo
+function proxima(s){
+  const now = new Date(), today = now.getDay(), mins = now.getHours()*60 + now.getMinutes();
+  for (let k = 0; k < 8; k++){
+    const d = (today + k) % 7;
+    if (!jsDows(s).includes(d)) continue;
+    if (k === 0 && s.fim != null && mins > s.fim) continue;
+    if (k === 0) return {txt:'Hoje', hoje:true};
+    if (k === 1) return {txt:'Amanhã'};
+    const dt = new Date(now); dt.setDate(now.getDate()+k);
+    return {txt: NOMEDIA[d][0].toUpperCase()+NOMEDIA[d].slice(1) + ` (${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')})`};
+  }
+  return {txt:'—'};
+}
+// ---------- geometria
+function inRing(y, x, r){ let ins=false; for(let i=0,j=r.length-1;i<r.length;j=i++){ const yi=r[i][0],xi=r[i][1],yj=r[j][0],xj=r[j][1]; if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi)) ins=!ins; } return ins; }
+const BB = {}; C.sectors.forEach(s => { const f = s.rings.flat(); BB[s.code] = [Math.min(...f.map(p=>p[0])),Math.max(...f.map(p=>p[0])),Math.min(...f.map(p=>p[1])),Math.max(...f.map(p=>p[1]))]; });
+function setorEm(la, lo){
+  for (const s of C.sectors){ const b = BB[s.code]; if (la<b[0]||la>b[1]||lo<b[2]||lo>b[3]) continue; if (s.rings.some(r => inRing(la, lo, r))) return s; }
+  return null;
+}
+// ---------- horário no ponto (GPS dos caminhões)
+const G = C.grid, GI = new Map();
+G.c.forEach(e => GI.set(e[0]+','+e[1]+','+e[2], e));
+function horaPonto(la, lo, s){
+  const si = C.codes.indexOf(s.code); const i0 = Math.floor((la-G.lat0)/G.dla), j0 = Math.floor((lo-G.lon0)/G.dlo);
+  let best = null;
+  for (let r = 0; r <= 3 && !best; r++){
+    const cand = [];
+    for (let di=-r; di<=r; di++) for (let dj=-r; dj<=r; dj++){ const e = GI.get((i0+di)+','+(j0+dj)+','+si); if (e) cand.push(e); }
+    if (cand.reduce((t,e)=>t+e[6],0) >= 6){ const n = cand.reduce((t,e)=>t+e[6],0); const w = e => e[6]/n;
+      best = {med: cand.reduce((t,e)=>t+e[3]*w(e),0), p20: cand.reduce((t,e)=>t+e[4]*w(e),0), p80: cand.reduce((t,e)=>t+e[5]*w(e),0), n: Math.max(...cand.map(e=>e[6]))}; }
+  }
+  return best;
+}
+// ---------- ícones
+const IC = {
+  cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  clk:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  trk:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>',
+  bag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l-1 13H7z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>',
+  st:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19 20 5M9 19l2-4M15 11l2-4"/></svg>',
+  pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
+  web:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+};
+function secCard(s, la, lo){
+  const px = proxima(s), hp = la != null ? horaPonto(la, lo, s) : null;
+  let h = `<div class="sec"><div class="top"><span class="badge"><i style="background:${colOf(s)}"></i>Setor ${s.code}</span>${px.hoje ? '<span class="today">Coleta hoje</span>' : ''}</div>
+  <div class="row">${IC.cal}<div><b>${s.dias}</b><span>Próxima coleta: ${px.txt}</span></div></div>`;
+  if (hp) h += `<div class="row">${IC.trk}<div><b class="big">por volta das ${hm(hp.med)}</b><span>Nesta rua o caminhão costuma passar entre ${hm(hp.p20)} e ${hm(hp.p80)}</span></div></div>`;
+  h += `<div class="row">${IC.clk}<div><b>Turno ${turnoTxt(s).toLowerCase()} · ${hm(s.ini)} às ${hm(s.fim)}</b><span>Período de coleta</span></div></div>`;
+  const lim = hp ? hp.p20 - 30 : (s.ini != null ? s.ini - 30 : null);
+  if (lim != null) h += `<div class="row">${IC.bag}<div><b>Coloque o lixo até ${hm(lim)}</b><span>Sacos bem fechados, na calçada, no dia da coleta</span></div></div>`;
+  return h + '</div>';
+}
+// ---------- mapa
+const map = L.map('map', { zoomControl: false, zoomSnap: .25, attributionControl: true }).setView([-16.651, -49.49], 13);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+const ruas = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Mapa © Esri · Ruas © OpenStreetMap' }).addTo(map);
+const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagem © Esri' });
+const satLbl = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
+$('#bMapa').onclick = () => { map.removeLayer(sat); map.removeLayer(satLbl); ruas.addTo(map); $('#bMapa').setAttribute('aria-pressed', true); $('#bSat').setAttribute('aria-pressed', false); };
+$('#bSat').onclick = () => { map.removeLayer(ruas); sat.addTo(map); satLbl.addTo(map); $('#bSat').setAttribute('aria-pressed', true); $('#bMapa').setAttribute('aria-pressed', false); };
+$('#bTema').onclick = () => { const r = document.documentElement; const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; r.dataset.theme = dark ? 'light' : 'dark'; style(); };
+
+const POLY = {};
+C.sectors.forEach(s => {
+  const p = L.polygon(s.rings, { weight: 1.6 }).addTo(map);
+  p.bindTooltip(s.code, { permanent: true, direction: 'center', className: 'lbl' });
+  POLY[s.code] = p;
+});
+function style(){
+  const soHoje = false, d = new Date().getDay();
+  C.sectors.forEach(s => { const on = !soHoje || jsDows(s).includes(d); const c = colOf(s);
+    POLY[s.code].setStyle({ color: on ? c : '#9aa0a6', fillColor: on ? c : '#9aa0a6', fillOpacity: on ? .28 : .06, opacity: on ? .95 : .35, weight: sel === s.code ? 3.5 : 1.6 });
+    if (sel === s.code) POLY[s.code].setStyle({ color: '#111318' }); });
+}
+function legend(){ $('#leg').innerHTML = GRPS.map(([k, n]) => `<span><i style="background:${css('--g-' + k)}"></i>${n}</span>`).join(''); }
+let sel = null;
+const all = L.latLngBounds(C.sectors.flatMap(s => s.rings.flat()));
+map.fitBounds(L.latLngBounds(C.sectors.filter(s=>!['2001','2000'].includes(s.code)).flatMap(s => s.rings.flat())).extend(SEC['2000'].rings[0]), { padding: [20, 20] });
+style();
+
+const marker = L.marker([0, 0], { icon: L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [26, 26], iconAnchor: [13, 26] }) });
+const streetL = L.layerGroup().addTo(map);
+
+window.fecharRes = () => fecharRes();
+function setRes(html){ $('#res').innerHTML = html ? `<button class="sheetclose" onclick="fecharRes()" aria-label="Fechar">×</button>` + html : ''; document.body.classList.toggle('hasres', !!html); }
+function fecharRes(){ setRes(''); map.closePopup(); }
+function mostrarPonto(la, lo, titulo, fromClick){
+  window.__ultimo = () => mostrarPonto(la, lo, titulo, true);
+  streetL.clearLayers();
+  const s = setorEm(la, lo); sel = s ? s.code : null; style();
+  marker.setLatLng([la, lo]).addTo(map);
+  const head = `<h2>${titulo ? 'Endereço' : 'Local selecionado'}</h2><p class="addr">${esc(titulo || 'Ponto no mapa')}</p>`;
+  if (!s){
+    setRes(''); map.removeLayer(marker);
+    L.popup({ offset: [0, -4] }).setLatLng([la, lo]).setContent('<div class="pp" style="min-width:0">Fora da área de coleta domiciliar</div>').openOn(map);
+    if (!fromClick) map.setView([la, lo], Math.max(map.getZoom(), 16)); return;
+  }
+  const ru = ruaPerto(la, lo);
+  setRes(head + secCard(s, la, lo) + (ru != null ? ultimaHTML(ru, true) : ''));
+  const hp = horaPonto(la, lo, s);
+  L.popup({ offset: [0, -22], autoPanPaddingTopLeft: innerWidth > 720 ? [420, 20] : [10, 140] }).setLatLng([la, lo]).setContent(
+    `<div class="pp"><h3><i style="display:inline-block;width:12px;height:12px;border-radius:4px;background:${colOf(s)}"></i>Setor ${s.code}</h3>
+     <div class="row">${IC.clk}<div>Turno: <b style="display:inline">${turnoTxt(s)}</b> · ${hm(s.ini)} – ${hm(s.fim)}</div></div>
+     ${hp ? `<div class="row">${IC.trk}<div>Passa por volta das <b style="display:inline">${hm(hp.med)}</b></div></div>` : ''}
+     <div class="row">${IC.cal}<div>${s.dias}</div></div></div>`).openOn(map);
+  if (!fromClick) map.setView([la, lo], Math.max(map.getZoom(), 16));
+}
+// ---------- ruas locais (offline)
+const ST = C.streets.map((r, i) => ({ i, n: r[0], b: r[1], sec: r[2], g: r[3], k: norm(r[0] + ' ' + r[1]), kn: norm(r[0]) }));
+function decG(str){ return str.split(';').map(part => { const a = part.split(',').map(x => parseInt(x, 36)); let la = 0, lo = 0; const o = []; for (let i = 0; i < a.length; i += 2){ la += a[i]; lo += a[i+1]; o.push([la/1e5, lo/1e5]); } return o; }); }
+function mostrarRua(st){
+  window.__ultimo = () => mostrarRua(st);
+  const lines = decG(st.g); streetL.clearLayers(); map.removeLayer(marker); map.closePopup();
+  L.polyline(lines, { color: '#ffffff', weight: 9, opacity: .9 }).addTo(streetL);
+  L.polyline(lines, { color: '#111318', weight: 5 }).addTo(streetL);
+  map.fitBounds(L.latLngBounds(lines.flat()), { padding: innerWidth > 720 ? [60, 60] : [30, 30], paddingTopLeft: innerWidth > 720 ? [430, 60] : [20, 150], maxZoom: 17 });
+  sel = st.sec.length === 1 ? st.sec[0][0] : null; style();
+  let h = `<h2>Rua</h2><p class="addr">${esc(st.n)}${st.b ? `<span class="muted" style="display:block;font-weight:500">${esc(st.b)}</span>` : ''}</p>`;
+  if (!st.sec.length){ setRes(''); L.popup().setLatLng(lines.flat()[Math.floor(lines.flat().length/2)]).setContent('<div class="pp" style="min-width:0">Rua fora da área de coleta domiciliar</div>').openOn(map); return; }
+  {
+    if (st.sec.length > 1) h += `<div class="muted">A rua passa por ${st.sec.length} setores. Digite o número da casa ou toque no mapa para ver o horário exato.</div>`;
+    st.sec.forEach(([c]) => { const s = SEC[c]; const mid = midPoint(lines, c); h += secCard(s, mid && mid[0], mid && mid[1]); });
+  }
+  h += ultimaHTML(st.i);
+  setRes(h);
+}
+function midPoint(lines, code){ const s = SEC[code]; const pts = lines.flat().filter(p => s.rings.some(r => inRing(p[0], p[1], r))); return pts.length ? pts[Math.floor(pts.length / 2)] : null; }
+function buscaLocal(q){
+  const nq = norm(q); if (nq.length < 2) return { ruas: [], bairros: [], setores: [] };
+  const tk = nq.split(' ');
+  const setores = C.sectors.filter(s => s.code.startsWith(nq) || ('setor ' + s.code).startsWith(nq)).slice(0, 4);
+  const ruas = ST.filter(s => tk.every(t => s.k.includes(t))).map(s => ({ s, sc: (s.kn.startsWith(nq) ? 0 : 1) + (s.sec.length ? 0 : 2) + s.kn.length / 200 })).sort((a, b) => a.sc - b.sc).slice(0, 8).map(x => x.s);
+  const bairros = C.bairros.filter(b => tk.every(t => norm(b[0]).includes(t))).slice(0, 4);
+  return { ruas, bairros, setores };
+}
+// ---------- endereço com número (online)
+const EXT = '-49.67,-16.78,-49.35,-16.54', LOC = '-49.49,-16.65';
+const GEO = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/';
+let onlineSug = [], seq = 0;
+async function sugOnline(q, my){
+  try{ const u = `${GEO}suggest?f=json&countryCode=BRA&maxSuggestions=6&location=${LOC}&searchExtent=${encodeURIComponent(EXT)}&text=${encodeURIComponent(q + (/\btrindade\b/i.test(q) ? '' : ' Trindade GO'))}`;
+    const j = await (await fetch(u)).json(); if (my !== seq) return; onlineSug = (j.suggestions || []).filter(s => /Trindade/i.test(s.text)); renderSug(); } catch (e) {}
+}
+async function geocode(text, magicKey){
+  const u = `${GEO}findAddressCandidates?f=json&countryCode=BRA&maxLocations=1&outFields=Match_addr&location=${LOC}&searchExtent=${encodeURIComponent(EXT)}&SingleLine=${encodeURIComponent(text)}` + (magicKey ? `&magicKey=${encodeURIComponent(magicKey)}` : '');
+  const j = await (await fetch(u)).json(); const c = (j.candidates || [])[0]; if (!c) throw new Error('não encontrado');
+  return { la: c.location.y, lo: c.location.x, t: c.address };
+}
+// ---------- caixa de pesquisa
+const q = $('#q'), sg = $('#sugg');
+let items = [], act = -1, tmr = null;
+function renderSug(){
+  const v = q.value.trim(); if (!v){ sg.style.display = 'none'; return; }
+  const L0 = buscaLocal(v); items = []; let h = '';
+  const add = (grp, arr, f) => { if (!arr.length) return; h += `<div class="grp">${grp}</div>`; arr.forEach(x => { const o = f(x); items.push(o.go); h += `<button role="option" data-i="${items.length-1}">${o.ic}<span><span class="t">${o.t}</span>${o.s ? `<span class="s" style="display:block">${o.s}</span>` : ''}</span></button>`; }); };
+  add('Endereços', onlineSug, s => ({ ic: `<span class="k">${IC.pin}</span>`, t: esc(s.text.split(',')[0]), s: esc(s.text.split(',').slice(1, 3).join(',')), go: async () => { try { const r = await geocode(s.text, s.magicKey); mostrarPonto(r.la, r.lo, r.t.split(', Goiás')[0]); } catch (e) { setRes('<div class="warn">Endereço não encontrado.</div>'); } } }));
+  add('Ruas', L0.ruas, s => ({ ic: `<span class="k">${IC.st}</span>`, t: esc(s.n) + s.sec.map(([c]) => `<span class="chipS" style="background:${colOf(SEC[c])}">${c}</span>`).join(''), s: esc(s.b || '') + (s.sec.length ? '' : (s.b ? ' · ' : '') + 'fora da área de coleta'), go: () => mostrarRua(s) }));
+  add('Bairros', L0.bairros, b => ({ ic: `<span class="k">${IC.pin}</span>`, t: esc(b[0]), s: '', go: () => mostrarPonto(b[1], b[2], b[0]) }));
+  add('Setores', L0.setores, s => ({ ic: `<span class="k"><i style="display:block;width:14px;height:14px;margin:2px;border-radius:4px;background:${colOf(s)}"></i></span>`, t: 'Setor ' + s.code, s: s.dias + ' · ' + turnoTxt(s), go: () => { const b = POLY[s.code].getBounds(); map.fitBounds(b, { paddingTopLeft: innerWidth > 720 ? [420, 20] : [10, 140] }); mostrarPonto(b.getCenter().lat, b.getCenter().lng, 'Setor ' + s.code, true); } }));
+  if (!items.length) h = `<div class="empty">Nada encontrado. ${/\d/.test(v) ? '' : 'Tente incluir o número da casa.'}<br><button style="padding:8px 0;color:var(--accent);font-weight:600" id="tryOnline">Buscar endereço “${esc(v)}”</button></div>`;
+  sg.innerHTML = h; sg.style.display = 'block'; act = -1;
+  sg.querySelectorAll('button[data-i]').forEach(b => b.onmousedown = e => { e.preventDefault(); escolher(+b.dataset.i); });
+  const t = $('#tryOnline'); if (t) t.onmousedown = e => { e.preventDefault(); buscarTexto(v); };
+}
+function escolher(i){ const f = items[i]; sg.style.display = 'none'; q.blur(); if (f) f(); }
+async function buscarTexto(v){
+  sg.style.display = 'none';
+  try { const r = await geocode(v + (/trindade/i.test(v) ? '' : ', Trindade, GO')); mostrarPonto(r.la, r.lo, r.t.split(', Goiás')[0]); }
+  catch (e) { const L0 = buscaLocal(v); if (L0.ruas[0]) mostrarRua(L0.ruas[0]); else setRes('<div class="warn">Não encontramos este endereço. Confira o nome da rua ou toque no mapa no local da sua casa.</div>'); }
+}
+q.addEventListener('input', () => { $('#clr').style.display = q.value ? 'block' : 'none'; onlineSug = []; renderSug(); clearTimeout(tmr); const my = ++seq; if (q.value.trim().length >= 3) tmr = setTimeout(() => sugOnline(q.value.trim(), my), 280); });
+q.addEventListener('focus', () => { if (q.value.trim()) renderSug(); });
+q.addEventListener('blur', () => setTimeout(() => sg.style.display = 'none', 150));
+q.addEventListener('keydown', e => {
+  const bs = [...sg.querySelectorAll('button[data-i]')];
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){ e.preventDefault(); if (!bs.length) return; act = (act + (e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length; bs.forEach((b, k) => b.classList.toggle('on', k === act)); bs[act].scrollIntoView({ block: 'nearest' }); }
+  else if (e.key === 'Enter'){ e.preventDefault(); if (act >= 0) escolher(+bs[act].dataset.i); else if (/\d/.test(q.value)) buscarTexto(q.value.trim()); else if (bs.length) escolher(+bs[0].dataset.i); else buscarTexto(q.value.trim()); }
+  else if (e.key === 'Escape'){ sg.style.display = 'none'; }
+});
+$('#clr').onclick = () => { q.value = ''; $('#clr').style.display = 'none'; sg.style.display = 'none'; streetL.clearLayers(); map.removeLayer(marker); sel = null; style(); fecharRes(); q.focus(); };
+$('#gps').onclick = () => {
+  if (!navigator.geolocation){ setRes('<div class="warn">Seu navegador não permite localização.</div>'); return; }
+  navigator.geolocation.getCurrentPosition(p => mostrarPonto(p.coords.latitude, p.coords.longitude, 'Minha localização'),
+    () => setRes('<div class="warn">Não foi possível obter sua localização. Pesquise pelo endereço ou toque no mapa.</div>'), { enableHighAccuracy: true, timeout: 10000 });
+};
+map.on('click', e => mostrarPonto(e.latlng.lat, e.latlng.lng, null, true));
+}
+</script>
+</body>
+</html>
