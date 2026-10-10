@@ -123,6 +123,86 @@ def rota_inlog(s, cod, dia, ativo, dia_semana=None):
     return linhas, (round(100 * ok / tot, 1) if tot else None), [r.get("Descricao") for r in rotas]
 
 
+# ---------------------------------------------------------------- última coleta por rua
+RAW_DADOS = "https://raw.githubusercontent.com/{repo}/dados/dados.enc.json"
+EPOCA = dt.datetime(2026, 1, 1)
+CELULA = 0.0003          # ~33 m
+RAIO_RUA = 25            # metros entre o GPS e a rua
+VEL_MAX = 25             # km/h: acima disso o caminhão está só passando
+
+
+def minutos(t):
+    return int((t - EPOCA).total_seconds() // 60)
+
+
+def indice_ruas():
+    arq = os.path.join(AQUI, "..", "docs", "consulta_dados.json")
+    ruas = json.load(open(arq))["streets"]
+    cel = {}
+    for idx, r in enumerate(ruas):
+        for parte in (r[3] or "").split(";"):
+            pts = dec(parte) if parte else []
+            for a, b in zip(pts, pts[1:] or pts):
+                n = max(1, int(dist_m(a, b) // 15))
+                for k in range(n + 1):
+                    p = (a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n)
+                    cel.setdefault((round(p[0] / CELULA), round(p[1] / CELULA)), []).append((p[0], p[1], idx))
+    return len(ruas), cel
+
+
+def marcar(ult, cel, pontos):
+    for t, la, lo, v in pontos:
+        if v > VEL_MAX:
+            continue
+        m = minutos(t); c0 = (round(la / CELULA), round(lo / CELULA))
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for pla, plo, idx in cel.get((c0[0] + di, c0[1] + dj), ()):
+                    if m > ult[idx] and dist_m((la, lo), (pla, plo)) <= RAIO_RUA:
+                        ult[idx] = m
+
+
+def estado_anterior():
+    try:
+        repo = os.environ.get("GITHUB_REPOSITORY", "torrelimpagyn/trindade-coleta")
+        e = requests.get(RAW_DADOS.format(repo=repo) + "?t=%d" % dt.datetime.now().timestamp(), timeout=30).json()
+        b = lambda v: base64.b64decode(v)
+        chave = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=b(e["sal"]), iterations=200000).derive(os.environ["SENHA_SITE"].encode())
+        return json.loads(AESGCM(chave).decrypt(b(e["iv"]), b(e["dados"]), None)).get("ruas")
+    except Exception as ex:
+        print("sem histórico anterior das ruas:", ex)
+        return None
+
+
+def gps_do_dia(s, dia):
+    pts = []
+    g = pegar_json(s, GRID.format(d=dia))
+    cods = {y["CodigoSetor"] for y in g["Data"]["Data"] if FILTRO in (y.get("MacroSetor") or "") and y.get("Controle") and y.get("CodigoSetor")}
+    for cod in cods:
+        for c in pegar_json(s, ROTA.format(c=cod, d=dia)) or []:
+            for h in c.get("RastreamentoHistorico") or []:
+                pts.append((dt.datetime.fromisoformat(h["DataHoraCompleta"][:19]), h["Posicao"]["Latitude"], h["Posicao"]["Longitude"], h.get("Velocidade") or 0))
+    return pts
+
+
+def historico_ruas(s, dia, gps_hoje):
+    n, cel = indice_ruas()
+    ant = estado_anterior()
+    if isinstance(ant, list) and len(ant) == n:
+        ult = ant
+    else:   # primeira vez: busca os últimos 7 dias na INLOG
+        ult = [0] * n
+        for k in range(7, 0, -1):
+            d = (dt.date.fromisoformat(dia) - dt.timedelta(days=k)).isoformat()
+            try:
+                marcar(ult, cel, gps_do_dia(s, d)); print("histórico das ruas: dia", d, "ok")
+            except Exception as ex:
+                print("histórico das ruas: dia", d, "falhou:", ex)
+    marcar(ult, cel, gps_hoje)
+    print("ruas com coleta registrada:", sum(1 for v in ult if v), "de", n)
+    return ult
+
+
 def seg(txt):
     if not txt:
         return 0
@@ -163,7 +243,7 @@ def main():
                 emprestado[(y.get("Setor") or "").split(" - ")[0]] = y
     except SystemExit:
         pass
-    setores = []
+    setores, gps_dia = [], []
     for x in linhas:
         cod = (x.get("Setor") or "").split(" - ")[0].strip()
         dia_x = dia
@@ -192,6 +272,7 @@ def main():
                     t1 = t if t1 is None or t > t1 else t1
                     pos = (h["Posicao"]["Latitude"], h["Posicao"]["Longitude"])
                     pontos.append(pos)
+                    gps_dia.append((t, pos[0], pos[1], h.get("Velocidade") or 0))
                 for p in c.get("PontosParada") or []:   # só paradas longas (>= 5 min) dentro do setor
                     d = seg(p.get("TempoParado"))
                     if d < PARADA_MIN or not p.get("Latitude"):
@@ -214,6 +295,12 @@ def main():
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%")
     dados = {"dia": dia, "at": agora.strftime("%H:%M"), "garagem": cad["garagem"], "S": setores}
+    try:
+        dados["ruas"] = historico_ruas(s, dia, gps_dia)
+    except SystemExit:
+        raise
+    except Exception as e:   # a consulta de ruas nunca derruba o painel
+        print("histórico das ruas indisponível:", e)
     criptografar(json.dumps(dados, separators=(",", ":")).encode())
 
 
