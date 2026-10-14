@@ -31,7 +31,8 @@ DIAS_BUSCA = 120        # até quantos dias para trás o histórico é buscado n
 NOVOS_POR_VEZ = 4       # dias antigos montados por execução (para não atrasar a coleta)
 RAIO_GARAGEM = 300      # metros
 RAIO_ATERRO = 400       # metros em volta do ponto do aterro
-VERSAO_HIST = 2         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
+VERSAO_HIST = 3         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
 
 
 def falha(msg):
@@ -247,13 +248,13 @@ def aterro(por_veic, ater):
         for t in sorted(pts):
             pos, vel, cod = pts[t]
             if dist_m(pos, ater) <= RAIO_ATERRO:
-                if atual and (t - atual["fim"]).total_seconds() <= 1200:
+                if atual and (t - atual["fim"]).total_seconds() <= SAIDA_ATERRO:   # saiu e voltou rápido: mesma passagem
                     atual["fim"] = t; atual["vmax"] = max(atual["vmax"], vel); atual["n"] += 1; atual["set"].add(cod)
                 else:
                     if atual:
                         vis.append(atual)
                     atual = {"v": v, "ini": t, "fim": t, "vmax": vel, "n": 1, "set": {cod}}
-            elif atual:
+            elif atual and (t - atual["fim"]).total_seconds() > SAIDA_ATERRO:
                 vis.append(atual); atual = None
         if atual:
             vis.append(atual)
