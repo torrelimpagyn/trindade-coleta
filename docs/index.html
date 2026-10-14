@@ -11,7 +11,14 @@ header{position:sticky;top:0;z-index:20;background:var(--g);color:#fff;padding:c
 header h1{font-size:17px;margin:0}
 .cons{float:right;color:#fff;background:rgba(255,255,255,.18);border-radius:999px;padding:5px 11px;font-size:12.5px;font-weight:700;text-decoration:none;margin-top:-2px}header .s{font-size:12.5px;opacity:.9;margin-top:2px}
 .wrap{max-width:760px;margin:0 auto;padding:12px 16px 40px}
-.dias{display:flex;gap:6px;margin-bottom:10px}.dias button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;width:42px;font:inherit;font-weight:700;font-size:18px}.dias button:disabled{opacity:.35}.dias select{flex:1;min-width:0;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:9px 10px;font:inherit;font-weight:600}.past{background:var(--ambbg);color:var(--amb);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;margin-bottom:10px}
+.dias{display:flex;gap:6px;margin-bottom:10px}.dias button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;width:42px;font:inherit;font-weight:700;font-size:18px}.dias button:disabled{opacity:.35}.dias .db{flex:1;width:auto;min-width:0;font-size:15px;padding:9px 10px;text-align:center}.dias .db small{color:var(--mut);font-weight:600}
+.cal{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:12px;box-shadow:0 6px 20px rgba(0,0,0,.08)}.cal .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.cal .ch b{font-size:15px}.cal .ch button{border:0;background:var(--soft);color:var(--ink);border-radius:9px;width:38px;height:34px;font:inherit;font-size:18px;font-weight:700}.cal .ch button:disabled{opacity:.3}
+.cg{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.cg i{font-style:normal;text-align:center;font-size:11px;color:var(--mut);font-weight:700;padding:2px 0}
+.cg .d{border:1px solid transparent;border-radius:9px;min-height:44px;padding:3px 0;font:inherit;font-weight:700;font-size:14px;color:var(--ink);background:var(--soft);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}.cg .d small{font-size:10px;font-weight:600;opacity:.85}.cg .d.off{background:none;color:var(--mut);opacity:.45;font-weight:500}
+.cg .d.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}.cg .d.hj{background:var(--g);color:#fff}
+.c-g{background:#d7efe2!important;color:#1d5a3f!important}.c-a{background:#fbe8c4!important;color:#7a4e0c!important}.c-r{background:#f6d3d1!important;color:#8e221e!important}
+@media(prefers-color-scheme:dark){.c-g{background:#1f4a35!important;color:#bfe9d2!important}.c-a{background:#4a3612!important;color:#f3d39a!important}.c-r{background:#4d1d1b!important;color:#f3bdb9!important}}
+.leg2{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);margin-top:8px}.leg2 i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-2px}.cn{font-size:11px;color:var(--mut);margin-top:6px}.past{background:var(--ambbg);color:var(--amb);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;margin-bottom:10px}
 .tabs{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;margin-bottom:12px}
 .tabs button{flex:1;border:0;background:none;padding:8px;border-radius:9px;font:inherit;font-weight:600;color:var(--mut)}
 .tabs button.on{background:var(--g);color:#fff}
@@ -43,10 +50,10 @@ header h1{font-size:17px;margin:0}
 <header><a class="cons" href="consulta.html">Consultar endereço ›</a><h1 id="tit">Coleta Trindade · Hoje</h1><div class="s" id="sub"></div></header>
 <div class="lock" id="lock" hidden><b>Acesso restrito</b><div style="color:var(--mut);font-size:13px">Digite a senha para ver a coleta de Trindade.</div><input id="pw" type="password" autocomplete="current-password" placeholder="Senha"><button id="go">Entrar</button><div class="err" id="err"></div></div>
 <div class="wrap" id="app" hidden>
- <div class="dias"><button id="prev" aria-label="Dia anterior">‹</button><select id="sel" aria-label="Escolher dia"></select><button id="next" aria-label="Dia seguinte">›</button></div><div class="past" id="past" hidden></div>
+ <div class="dias"><button id="prev" aria-label="Dia anterior">‹</button><button id="diaBtn" class="db" aria-label="Escolher dia no calendário"></button><button id="next" aria-label="Dia seguinte">›</button></div><div class="cal" id="cal" hidden></div><div class="past" id="past" hidden></div>
  <div class="tabs"><button data-t="MATUTINO" class="on">Manhã</button><button data-t="VESPERTINO">Tarde</button></div>
  <div class="sum" id="sum"></div><div id="list"></div>
- <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Os dias anteriores ficam guardados por 31 dias. Saída/retorno à garagem calculados pelo GPS do veículo (raio de 300 m da garagem). Percentual executado = percentual da própria INLOG. No mapa aparece a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar.</div>
+ <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Use o calendário para ver dias anteriores (guardados por mais de um ano). Saída/retorno à garagem calculados pelo GPS do veículo (raio de 300 m da garagem). Percentual executado = percentual da própria INLOG. No mapa aparece a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar.</div>
 </div>
 <div id="sheet"><div class="hd"><button id="back">‹ Voltar</button><h2 id="shT"></h2></div><div id="map"></div><div class="ft" id="shF"></div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -98,21 +105,35 @@ document.querySelectorAll('.tabs button').forEach(b=>{b.classList.toggle('on',b.
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 const BASE='https://raw.githubusercontent.com/torrelimpagyn/trindade-coleta/dados/',WD=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 async function baixar(arq){try{const r=await fetch(BASE+arq+'?t='+Date.now(),{cache:'no-store'});if(r.ok)return await r.json()}catch(e){}if(arq.startsWith('hist/'))throw new Error('sem dados');const r=await fetch(arq+'?t='+Date.now(),{cache:'no-store'});return await r.json()}
-async function indice(){try{IDX=(await baixar('hist/index.json')).dias||{}}catch(e){IDX={}}
- const sel=document.getElementById('sel'),hoje=D?D.dia:'',dias=Object.keys(IDX).filter(d=>d!==hoje).sort().reverse();
- const f=d=>{const [y,m,a]=d.split('-');return `${WD[new Date(+y,m-1,+a).getDay()]}, ${a}/${m}`};
- sel.innerHTML='<option value="">Hoje (ao vivo)</option>'+dias.map(d=>`<option value="${d}">${f(d)}${IDX[d]==='final'?'':' · parcial'}</option>`).join('');sel.value=DIA||'';botoes()}
-function botoes(){const o=[...document.getElementById('sel').options].map(x=>x.value),i=o.indexOf(DIA||'');document.getElementById('next').disabled=i<=0;document.getElementById('prev').disabled=i>=o.length-1}
-async function irPara(d){DIA=d||null;OPEN.clear();document.getElementById('sel').value=d||'';botoes();document.getElementById('list').innerHTML='<div class="note">Carregando…</div>';await carregar()}
-document.getElementById('sel').onchange=e=>irPara(e.target.value);
-document.getElementById('prev').onclick=()=>{const s=document.getElementById('sel');if(s.selectedIndex<s.options.length-1)irPara(s.options[s.selectedIndex+1].value)};
-document.getElementById('next').onclick=()=>{const s=document.getElementById('sel');if(s.selectedIndex>0)irPara(s.options[s.selectedIndex-1].value)};
+const MES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const st=v=>v&&typeof v==='object'?v.s:v,iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+let CAL=null,HOJE=null;
+const comDados=()=>Object.keys(IDX).filter(d=>['final','parcial'].includes(st(IDX[d]))&&d!==HOJE).sort();
+async function indice(){try{IDX=(await baixar('hist/index.json')).dias||{}}catch(e){IDX={}}if(D&&!DIA)HOJE=D.dia;botoes();if(!document.getElementById('cal').hidden)desenhar()}
+function rotulo(){const b=document.getElementById('diaBtn');if(!DIA){b.innerHTML='📅 Hoje <small>· ao vivo</small>';return}const [y,m,a]=DIA.split('-');b.innerHTML=`📅 ${WD[new Date(+y,m-1,+a).getDay()]}, ${a}/${m}/${y}`}
+function botoes(){const L=comDados();rotulo();const i=DIA?L.indexOf(DIA):L.length;document.getElementById('prev').disabled=i<=0;document.getElementById('next').disabled=!DIA}
+function cor(v){if(!v||typeof v!=='object'||v.m==null)return 'c-x';return v.m>=90?'c-g':v.m>=70?'c-a':'c-r'}
+function desenhar(){const c=document.getElementById('cal');const y=CAL.getFullYear(),m=CAL.getMonth();
+ const L=comDados(),min=L[0]||HOJE,hj=HOJE||iso(new Date());
+ const ini=new Date(y,m,1),off=ini.getDay(),n=new Date(y,m+1,0).getDate();
+ let h=`<div class="ch"><button data-n="-1" ${min&&iso(new Date(y,m,0))<min?'disabled':''}>‹</button><b>${MES[m]} ${y}</b><button data-n="1" ${iso(new Date(y,m+1,1))>hj?'disabled':''}>›</button></div><div class="cg">`+['D','S','T','Q','Q','S','S'].map(x=>`<i>${x}</i>`).join('')+'<span></span>'.repeat(off);
+ for(let d=1;d<=n;d++){const k=iso(new Date(y,m,d)),v=IDX[k],eh=k===hj,ok=eh||['final','parcial'].includes(st(v));
+  const tip=eh?'Hoje':v&&typeof v==='object'&&v.m!=null?`${v.m}% de média · ${v.n} setores${v.i?` · ${v.i} sem concluir`:''}`:st(v)==='vazio'?'sem coleta registrada':ok?'':'sem dados';
+  h+=`<button class="d ${ok?cor(eh?null:v):'off'} ${(DIA||hj)===k?'sel':''} ${eh?'hj':''}" ${ok?`data-d="${eh?'':k}"`:'disabled'} title="${tip}">${d}${ok&&!eh&&v&&v.m!=null?`<small>${v.m}%</small>`:eh?'<small>hoje</small>':''}</button>`}
+ h+=`</div><div class="leg2"><span><i class="c-g"></i>90% ou mais</span><span><i class="c-a"></i>70 a 89%</span><span><i class="c-r"></i>abaixo de 70%</span></div><div class="cn">Média executada do dia (todos os setores que saíram). Os dias anteriores vão sendo carregados aos poucos.</div>`;
+ c.innerHTML=h;
+ c.querySelectorAll('.ch button').forEach(b=>b.onclick=()=>{CAL=new Date(y,m+ +b.dataset.n,1);desenhar()});
+ c.querySelectorAll('.d[data-d]').forEach(b=>b.onclick=()=>{c.hidden=true;irPara(b.dataset.d)})}
+document.getElementById('diaBtn').onclick=()=>{const c=document.getElementById('cal');if(!c.hidden){c.hidden=true;return}const [y,m]=(DIA||HOJE||iso(new Date())).split('-');CAL=new Date(+y,m-1,1);desenhar();c.hidden=false};
+async function irPara(d){DIA=d||null;OPEN.clear();botoes();document.getElementById('list').innerHTML='<div class="note">Carregando…</div>';await carregar();botoes()}
+document.getElementById('prev').onclick=()=>{const L=comDados(),i=DIA?L.indexOf(DIA):L.length;if(i>0)irPara(L[i-1])};
+document.getElementById('next').onclick=()=>{const L=comDados(),i=L.indexOf(DIA);irPara(i>=0&&i<L.length-1?L[i+1]:'')};
 async function abrir(pw){const e=await baixar(DIA?'hist/'+DIA+'.enc.json':'dados.enc.json');
  const k0=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
  const k=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(e.sal),iterations:200000,hash:'SHA-256'},k0,{name:'AES-GCM',length:256},false,['decrypt']);
- const raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(e.iv)},k,b64(e.dados));return JSON.parse(new TextDecoder().decode(raw))}
+ let raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(e.iv)},k,b64(e.dados));if(e.z)raw=await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();return JSON.parse(new TextDecoder().decode(raw))}
 async function carregar(){const pw=localStorage.getItem('tc_pw');if(!pw){document.getElementById('lock').hidden=false;return}
- try{D=await abrir(pw);document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;render();if(!DIA&&!Object.keys(IDX).length)indice()}
+ try{D=await abrir(pw);document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;render();if(!DIA){HOJE=D.dia;if(!Object.keys(IDX).length)indice();else botoes()}}
  catch(e){if(DIA){document.getElementById('list').innerHTML='<div class="note">Não há dados guardados desse dia.</div>';return}localStorage.removeItem('tc_pw');document.getElementById('app').hidden=true;document.getElementById('lock').hidden=false;document.getElementById('err').textContent='Senha incorreta ou dados indisponíveis.'}}
 document.getElementById('go').onclick=()=>{try{localStorage.setItem('tc_pw',document.getElementById('pw').value)}catch(e){}carregar()};
 document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
