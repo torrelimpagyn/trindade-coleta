@@ -30,6 +30,8 @@ DIAS_HIST = 400         # quantos dias ficam guardados para consulta (~13 meses)
 DIAS_BUSCA = 120        # até quantos dias para trás o histórico é buscado na INLOG
 NOVOS_POR_VEZ = 4       # dias antigos montados por execução (para não atrasar a coleta)
 RAIO_GARAGEM = 300      # metros
+RAIO_ATERRO = 400       # metros em volta do ponto do aterro
+VERSAO_HIST = 2         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
 
 
 def falha(msg):
@@ -236,6 +238,36 @@ def garagem(trilha, gar):
     return saida, volta, trilha[0][0]
 
 
+# ---------------------------------------------------------------- aterro
+def aterro(por_veic, ater):
+    """Passagens pelo aterro: entrada, saída, duração e velocidade máxima dentro (pelo GPS de cada veículo)."""
+    vis = []
+    for v, pts in por_veic.items():
+        atual = None
+        for t in sorted(pts):
+            pos, vel, cod = pts[t]
+            if dist_m(pos, ater) <= RAIO_ATERRO:
+                if atual and (t - atual["fim"]).total_seconds() <= 1200:
+                    atual["fim"] = t; atual["vmax"] = max(atual["vmax"], vel); atual["n"] += 1; atual["set"].add(cod)
+                else:
+                    if atual:
+                        vis.append(atual)
+                    atual = {"v": v, "ini": t, "fim": t, "vmax": vel, "n": 1, "set": {cod}}
+            elif atual:
+                vis.append(atual); atual = None
+        if atual:
+            vis.append(atual)
+    out = []
+    for a in sorted(vis, key=lambda x: x["ini"]):
+        dur = int((a["fim"] - a["ini"]).total_seconds())
+        if a["n"] < 2 and dur < 60:
+            continue
+        out.append({"v": a["v"], "s": sorted(a["set"]), "ini": a["ini"].strftime("%Y-%m-%d %H:%M"), "fim": a["fim"].strftime("%Y-%m-%d %H:%M"),
+                    "dur": dur, "vmax": round(a["vmax"])})
+        print("    aterro", a["v"], out[-1]["ini"], "→", out[-1]["fim"][11:], dur // 60, "min · vmax", out[-1]["vmax"], "km/h")
+    return out
+
+
 # ---------------------------------------------------------------- principal
 def montar(s, dia, cad, at):
     """Monta o quadro de um dia (hoje ou um dia anterior)."""
@@ -267,7 +299,7 @@ def montar(s, dia, cad, at):
                 emprestado[(y.get("Setor") or "").split(" - ")[0]] = y
     except SystemExit:
         pass
-    setores, gps_dia = [], []
+    setores, gps_dia, por_veic = [], [], {}
     for x in linhas:
         cod = (x.get("Setor") or "").split(" - ")[0].strip()
         dia_x = dia
@@ -299,6 +331,7 @@ def montar(s, dia, cad, at):
                     pontos.append(pos)
                     tr.append((t, pos))
                     gps_dia.append((t, pos[0], pos[1], h.get("Velocidade") or 0))
+                    por_veic.setdefault(v or "?", {})[t] = (pos, h.get("Velocidade") or 0, cod)
                 for p in c.get("PontosParada") or []:   # só paradas longas (>= 5 min) dentro do setor
                     d = seg(p.get("TempoParado"))
                     if d < PARADA_MIN or not p.get("Latitude"):
@@ -336,7 +369,7 @@ def montar(s, dia, cad, at):
         o.pop("_ent", None)
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%")
-    return {"dia": dia, "at": at, "garagem": cad["garagem"], "S": setores}, gps_dia
+    return {"dia": dia, "at": at, "garagem": cad["garagem"], "S": setores, "aterro": aterro(por_veic, tuple(cad["aterro"]))}, gps_dia
 
 
 def indice_hist():
@@ -365,7 +398,7 @@ def guardar_dia(dados, sit, idx):
     os.makedirs(HIST, exist_ok=True)
     criptografar(json.dumps(dados, separators=(",", ":")).encode(), os.path.join(HIST, dados["dia"] + ".enc.json"), True)
     inc = sum(1 for x in dados["S"] if x["sit"] == "EXECUTADO" and x["pct"] < 90)
-    idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(x["pct"] for x in S) / len(S)) if S else 0, "n": len(S), "i": inc}
+    idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(x["pct"] for x in S) / len(S)) if S else 0, "n": len(S), "i": inc, "v": VERSAO_HIST}
 
 
 def main():
@@ -390,7 +423,7 @@ def main():
         if feitos >= NOVOS_POR_VEZ:
             break
         v = idx["dias"].get(d)
-        if isinstance(v, dict) and v.get("s") in ("final", "vazio"):   # (formato antigo sem resumo é refeito)
+        if isinstance(v, dict) and (v.get("s") == "vazio" or v.get("s") == "final" and v.get("v", 1) >= VERSAO_HIST):   # versões antigas são refeitas
             continue
         feitos += 1
         try:
