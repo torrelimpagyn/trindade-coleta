@@ -285,8 +285,8 @@ def montar(s, dia, cad, at):
                     o["veic"].append(v)
                 col = c.get("SetoresColeta") or []
                 ent = col[0].get("DataHoraInicio") if col else None
-                if ent and (o["entrada"] is None or ent[11:16] < o["entrada"]):
-                    o["entrada"] = ent[11:16]
+                if ent and (o.get("_ent") is None or ent < o["_ent"]):
+                    o["_ent"], o["entrada"] = ent, ent[11:16]
                 H = c.get("RastreamentoHistorico") or []
                 tr = trilhas.setdefault(v or "?", [])
                 for h in H:
@@ -332,6 +332,7 @@ def montar(s, dia, cad, at):
                 raise
             except Exception as e:   # sem rota programada: o card continua funcionando
                 print("  rota", cod, "indisponível:", e)
+        o.pop("_ent", None)
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%")
     return {"dia": dia, "at": at, "garagem": cad["garagem"], "S": setores}, gps_dia
