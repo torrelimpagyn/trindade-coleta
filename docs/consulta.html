@@ -86,7 +86,8 @@ body{background:var(--page);color:var(--ink);font:14px/1.45 system-ui,-apple-sys
 .leaflet-popup-content{margin:12px 14px;min-width:220px;font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
 .pp h3{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
 .pp .row{margin:5px 0}
-.pp .row svg{width:16px;height:16px}
+.pp .row svg{width:16px;height:16px;flex:0 0 16px;margin-top:2px;color:var(--accent)}
+.pp .row{display:flex;gap:8px;align-items:flex-start}.pp .row span{display:block;color:var(--ink2);font-size:12px}.pp .pt{font-weight:700;font-size:13.5px;margin-bottom:6px}.pp h3{margin-top:8px}.pp .ult{margin-top:8px}.pp .muted{font-size:11.5px}
 .lbl{background:none;border:0;box-shadow:none;font:700 11px system-ui,sans-serif;color:#111;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff}
 .lbl::before{display:none}
 .leaflet-container{font:inherit}
@@ -299,7 +300,17 @@ const marker = L.marker([0, 0], { icon: L.divIcon({ className: '', html: '<div c
 const streetL = L.layerGroup().addTo(map);
 
 window.fecharRes = () => fecharRes();
-function setRes(html){ $('#res').innerHTML = html ? `<button class="sheetclose" onclick="fecharRes()" aria-label="Fechar">×</button>` + html : ''; document.body.classList.toggle('hasres', !!html); }
+let resT = null;
+function setRes(html){ clearTimeout(resT); const ok = html && html.includes('class="warn"'); $('#res').innerHTML = ok ? html : ''; document.body.classList.toggle('hasres', !!ok); if (ok) resT = setTimeout(() => setRes(''), 6000); }
+function popInfo(s, la, lo){
+  const px = proxima(s), hp = la != null ? horaPonto(la, lo, s) : null;
+  let h = `<h3><i style="display:inline-block;width:12px;height:12px;border-radius:4px;background:${colOf(s)}"></i>Setor ${s.code}${px.hoje ? '<span class="today" style="margin-left:auto">Coleta hoje</span>' : ''}</h3>`;
+  h += `<div class="row">${IC.cal}<div><b>${s.dias}</b><span>Próxima coleta: ${px.txt}</span></div></div>`;
+  if (hp) h += `<div class="row">${IC.trk}<div><b>Passa por volta das ${hm(hp.med)}</b><span>Costuma passar entre ${hm(hp.p20)} e ${hm(hp.p80)}</span></div></div>`;
+  h += `<div class="row">${IC.clk}<div><b>Turno ${turnoTxt(s).toLowerCase()} · ${hm(s.ini)} às ${hm(s.fim)}</b></div></div>`;
+  return h;
+}
+function abrirPop(ll, html){ L.popup({ offset: [0, -22], maxWidth: 320, maxHeight: Math.round(innerHeight * .6), autoPanPaddingTopLeft: innerWidth > 720 ? [420, 20] : [10, 150] }).setLatLng(ll).setContent(`<div class="pp">${html}</div>`).openOn(map); }
 function fecharRes(){ setRes(''); map.closePopup(); }
 function mostrarPonto(la, lo, titulo, fromClick){
   window.__ultimo = () => mostrarPonto(la, lo, titulo, true);
@@ -313,13 +324,8 @@ function mostrarPonto(la, lo, titulo, fromClick){
     if (!fromClick) map.setView([la, lo], Math.max(map.getZoom(), 16)); return;
   }
   const ru = ruaPerto(la, lo);
-  setRes(head + secCard(s, la, lo) + (ru != null ? ultimaHTML(ru, true) : ''));
-  const hp = horaPonto(la, lo, s);
-  L.popup({ offset: [0, -22], autoPanPaddingTopLeft: innerWidth > 720 ? [420, 20] : [10, 140] }).setLatLng([la, lo]).setContent(
-    `<div class="pp"><h3><i style="display:inline-block;width:12px;height:12px;border-radius:4px;background:${colOf(s)}"></i>Setor ${s.code}</h3>
-     <div class="row">${IC.clk}<div>Turno: <b style="display:inline">${turnoTxt(s)}</b> · ${hm(s.ini)} – ${hm(s.fim)}</div></div>
-     ${hp ? `<div class="row">${IC.trk}<div>Passa por volta das <b style="display:inline">${hm(hp.med)}</b></div></div>` : ''}
-     <div class="row">${IC.cal}<div>${s.dias}</div></div></div>`).openOn(map);
+  setRes('');
+  abrirPop([la, lo], (titulo ? `<div class="pt">${esc(titulo)}</div>` : ru != null ? `<div class="pt">${esc(C.streets[ru][0])}</div>` : '') + popInfo(s, la, lo) + (ru != null ? ultimaHTML(ru, true) : ''));
   if (!fromClick) map.setView([la, lo], Math.max(map.getZoom(), 16));
 }
 // ---------- ruas locais (offline)
@@ -332,14 +338,15 @@ function mostrarRua(st){
   L.polyline(lines, { color: '#111318', weight: 5 }).addTo(streetL);
   map.fitBounds(L.latLngBounds(lines.flat()), { padding: innerWidth > 720 ? [60, 60] : [30, 30], paddingTopLeft: innerWidth > 720 ? [430, 60] : [20, 150], maxZoom: 17 });
   sel = st.sec.length === 1 ? st.sec[0][0] : null; style();
-  let h = `<h2>Rua</h2><p class="addr">${esc(st.n)}${st.b ? `<span class="muted" style="display:block;font-weight:500">${esc(st.b)}</span>` : ''}</p>`;
+  let h = `<div class="pt">${esc(st.n)}${st.b ? `<span class="muted" style="display:block;font-weight:500">${esc(st.b)}</span>` : ''}</div>`;
   if (!st.sec.length){ setRes(''); L.popup().setLatLng(lines.flat()[Math.floor(lines.flat().length/2)]).setContent('<div class="pp" style="min-width:0">Rua fora da área de coleta domiciliar</div>').openOn(map); return; }
   {
     if (st.sec.length > 1) h += `<div class="muted">A rua passa por ${st.sec.length} setores. Digite o número da casa para ver o horário exato.</div>`;
-    st.sec.forEach(([c]) => { const s = SEC[c]; const mid = midPoint(lines, c); h += secCard(s, mid && mid[0], mid && mid[1]); });
+    st.sec.forEach(([c]) => { const s = SEC[c]; const mid = midPoint(lines, c); h += popInfo(s, mid && mid[0], mid && mid[1]); });
   }
   h += ultimaHTML(st.i);
-  setRes(h);
+  setRes('');
+  const fl = lines.flat(); abrirPop(fl[Math.floor(fl.length / 2)], h);
 }
 function midPoint(lines, code){ const s = SEC[code]; const pts = lines.flat().filter(p => s.rings.some(r => inRing(p[0], p[1], r))); return pts.length ? pts[Math.floor(pts.length / 2)] : null; }
 function buscaLocal(q){
@@ -400,6 +407,7 @@ $('#gps').onclick = () => {
   navigator.geolocation.getCurrentPosition(p => mostrarPonto(p.coords.latitude, p.coords.longitude, 'Minha localização'),
     () => setRes('<div class="warn">Não foi possível obter sua localização. Pesquise pelo endereço.</div>'), { enableHighAccuracy: true, timeout: 10000 });
 };
+map.on('click', e => mostrarPonto(e.latlng.lat, e.latlng.lng, null, true));
 }
 </script>
 </body>

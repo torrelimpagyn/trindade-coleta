@@ -19,6 +19,8 @@ header h1{font-size:17px;margin:0}
 .c-g{background:#d7efe2!important;color:#1d5a3f!important}.c-a{background:#fbe8c4!important;color:#7a4e0c!important}.c-r{background:#f6d3d1!important;color:#8e221e!important}
 @media(prefers-color-scheme:dark){.c-g{background:#1f4a35!important;color:#bfe9d2!important}.c-a{background:#4a3612!important;color:#f3d39a!important}.c-r{background:#4d1d1b!important;color:#f3bdb9!important}}
 .leg2{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);margin-top:8px}.leg2 i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-2px}.cn{font-size:11px;color:var(--mut);margin-top:6px}.past{background:var(--ambbg);color:var(--amb);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;margin-bottom:10px}
+.vt{display:flex;gap:6px;margin-bottom:10px}.vt button{flex:1;border:1px solid var(--line);background:var(--card);color:var(--mut);border-radius:999px;padding:8px;font:inherit;font-weight:700}.vt button.on{background:var(--ink);color:var(--card);border-color:var(--ink)}
+.at{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}.at .h{display:flex;align-items:center;gap:8px;margin-bottom:6px}.at .h b{font-size:15px}.at .h .tag{margin-left:auto}.at .g{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:13px}.at .g span{display:block;color:var(--mut);font-size:11.5px}.at .g b{font-weight:700}.at .hi{color:var(--red)}
 .tabs{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;margin-bottom:12px}
 .tabs button{flex:1;border:0;background:none;padding:8px;border-radius:9px;font:inherit;font-weight:600;color:var(--mut)}
 .tabs button.on{background:var(--g);color:#fff}
@@ -51,18 +53,31 @@ header h1{font-size:17px;margin:0}
 <div class="lock" id="lock" hidden><b>Acesso restrito</b><div style="color:var(--mut);font-size:13px">Digite a senha para ver a coleta de Trindade.</div><input id="pw" type="password" autocomplete="current-password" placeholder="Senha"><button id="go">Entrar</button><div class="err" id="err"></div></div>
 <div class="wrap" id="app" hidden>
  <div class="dias"><button id="prev" aria-label="Dia anterior">‹</button><button id="diaBtn" class="db" aria-label="Escolher dia no calendário"></button><button id="next" aria-label="Dia seguinte">›</button></div><div class="cal" id="cal" hidden></div><div class="past" id="past" hidden></div>
- <div class="tabs"><button data-t="MATUTINO" class="on">Manhã</button><button data-t="VESPERTINO">Tarde</button></div>
- <div class="sum" id="sum"></div><div id="list"></div>
- <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Use o calendário para ver dias anteriores (guardados por mais de um ano). Saída/retorno à garagem calculados pelo GPS do veículo (raio de 300 m da garagem). Percentual executado = percentual da própria INLOG. No mapa aparece a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar.</div>
+ <div class="vt" id="vt"><button data-v="col" class="on">Coleta</button><button data-v="ate">Aterro</button></div>
+ <div id="vCol"><div class="tabs"><button data-t="MATUTINO" class="on">Manhã</button><button data-t="VESPERTINO">Tarde</button></div>
+ <div class="sum" id="sum"></div><div id="list"></div></div>
+ <div id="vAte" hidden><div class="sum" id="aSum"></div><div id="aList"></div></div>
+ <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Use o calendário para ver dias anteriores (guardados por mais de um ano). Saída/retorno à garagem calculados pelo GPS do veículo (raio de 300 m da garagem). Aterro: entrada e saída pelo GPS, num raio de 400 m do aterro; velocidade máxima = maior velocidade registrada pelo GPS lá dentro. Percentual executado = percentual da própria INLOG. No mapa aparece a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar.</div>
 </div>
 <div id="sheet"><div class="hd"><button id="back">‹ Voltar</button><h2 id="shT"></h2></div><div id="map"></div><div class="ft" id="shF"></div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-let D=null,DIA=null,IDX={};let TURNO=(new Date().getHours()>=14)?'VESPERTINO':'MATUTINO',OPEN=new Set();
+let D=null,DIA=null,IDX={},VIEW='col';let TURNO=(new Date().getHours()>=14)?'VESPERTINO':'MATUTINO',OPEN=new Set();
 const nf=(v,d=0)=>Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const hm=s=>{const h=Math.floor(s/3600),m=Math.round(s%3600/60);return h?`${h}h ${String(m).padStart(2,'0')}min`:`${m} min`};
 const SIT={ATIVO:['Em execução','st-a'],AGUARDANDO:['Aguardando','st-w'],EXECUTADO:['Finalizado','st-e']};
-function render(){
+function render(){if(VIEW==='ate'){renderAte();return}renderCol()}
+function renderAte(){const [y,mo,da]=D.dia.split('-'),hj=!DIA;cabecalho(y,mo,da,hj);
+ const A=D.aterro;document.getElementById('aSum').innerHTML='';
+ if(!A){document.getElementById('aList').innerHTML='<div class="note">Os dados do aterro deste dia ainda estão sendo preparados. Volte em alguns minutos.</div>';return}
+ const tot=A.reduce((a,x)=>a+x.dur,0),vm=A.reduce((a,x)=>Math.max(a,x.vmax),0);
+ document.getElementById('aSum').innerHTML=`<div><b>${A.length}</b><small>entradas no aterro</small></div><div><b>${A.length?hm(Math.round(tot/A.length)):'—'}</b><small>tempo médio dentro</small></div><div><b>${A.length?nf(vm)+' km/h':'—'}</b><small>maior velocidade dentro</small></div>`;
+ const dt=x=>{const [d,h]=x.split(' '),[,m,a]=d.split('-');return [`${a}/${m}`,h]};
+ document.getElementById('aList').innerHTML=A.length?A.map(x=>{const i=dt(x.ini),f=dt(x.fim);return `<div class="at"><div class="h"><b>${x.v}</b><span style="color:var(--mut);font-size:12.5px">Setor ${x.s.join(', ')}</span><span class="tag">${hm(x.dur)}</span></div><div class="g"><div><span>Data de início</span><b>${i[0]}</b></div><div><span>Hora de início</span><b>${i[1]}</b></div><div><span>Data de fim</span><b>${f[0]}</b></div><div><span>Hora de fim</span><b>${f[1]}</b></div><div><span>Duração dentro do aterro</span><b>${hm(x.dur)}</b></div><div><span>Velocidade máxima dentro</span><b>${nf(x.vmax)} km/h</b></div></div></div>`}).join(''):'<div class="note">Nenhuma entrada no aterro registrada neste dia.</div>';}
+function cabecalho(y,mo,da,hj){document.getElementById('tit').textContent='Coleta Trindade · '+(hj?'Hoje':`${da}/${mo}`);
+ document.getElementById('sub').textContent=hj?`${da}/${mo}/${y} · atualizado às ${D.at}`:`${WD[new Date(+y,mo-1,+da).getDay()]}, ${da}/${mo}/${y} · ${D.at==='final'?'dia encerrado':'parcial até '+D.at}`;
+ const pa=document.getElementById('past');pa.hidden=hj;pa.textContent=hj?'':'Você está vendo um dia anterior. Use o calendário ou a seta › para voltar a Hoje.'}
+function renderCol(){
  const [y,mo,da]=D.dia.split('-'),hj=!DIA;document.getElementById('tit').textContent='Coleta Trindade · '+(hj?'Hoje':`${da}/${mo}`);
  document.getElementById('sub').textContent=hj?`${da}/${mo}/${y} · atualizado às ${D.at}`:`${WD[new Date(+y,mo-1,+da).getDay()]}, ${da}/${mo}/${y} · ${D.at==='final'?'dia encerrado':'parcial até '+D.at}`;
  const pa=document.getElementById('past');pa.hidden=hj;pa.textContent=hj?'':'Você está vendo um dia anterior. Escolha "Hoje" para voltar ao acompanhamento ao vivo.';
@@ -100,6 +115,7 @@ function openMap(c){const s=D.S.find(x=>x.s===c);document.getElementById('sheet'
  document.getElementById('shT').textContent='Setor '+s.s+' · '+nf(s.pct)+'%';
  document.getElementById('shF').innerHTML=`${(s.veic||[]).join(', ')} · última posição ${s.ult||'—'}<div class="leg"><span><i style="background:#1a8a4a"></i>Executado</span><span><i style="background:#d13b30"></i>Falta executar</span><span><i style="background:#e08a00;width:10px;height:10px;border-radius:50%"></i>Parada longa</span></div>`;
  setTimeout(()=>{map.invalidateSize();map.fitBounds(L.latLngBounds((s.lin||[]).length?s.lin.flatMap(l=>l[1]):s.ring.flat()),{padding:[20,20]})},30);}
+document.querySelectorAll('#vt button').forEach(b=>b.onclick=()=>{VIEW=b.dataset.v;document.querySelectorAll('#vt button').forEach(x=>x.classList.toggle('on',x===b));document.getElementById('vCol').hidden=VIEW!=='col';document.getElementById('vAte').hidden=VIEW!=='ate';if(D)render()});
 document.getElementById('back').onclick=()=>document.getElementById('sheet').classList.remove('open');
 document.querySelectorAll('.tabs button').forEach(b=>{b.classList.toggle('on',b.dataset.t===TURNO);b.onclick=()=>{TURNO=b.dataset.t;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));render()}});
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
