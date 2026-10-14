@@ -4,7 +4,7 @@ Variáveis de ambiente (cadastradas em Settings > Secrets and variables > Action
   INLOG_USUARIO, INLOG_SENHA  -> login da INLOG
   SENHA_SITE                  -> senha que as pessoas digitam para abrir o site
 """
-import base64, datetime as dt, json, math, os, re, sys
+import base64, datetime as dt, gzip, json, math, os, re, sys
 from zoneinfo import ZoneInfo
 
 import requests
@@ -26,8 +26,9 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 SAIDA = os.path.join(AQUI, "..", "docs", "dados.enc.json")
 HIST = os.path.join(AQUI, "..", "docs", "hist")
 RAW_HIST = "https://raw.githubusercontent.com/{repo}/dados/hist/index.json"
-DIAS_HIST = 31          # quantos dias ficam guardados para consulta
-NOVOS_POR_VEZ = 3       # dias antigos montados por execução (para não atrasar a coleta)
+DIAS_HIST = 400         # quantos dias ficam guardados para consulta (~13 meses)
+DIAS_BUSCA = 120        # até quantos dias para trás o histórico é buscado na INLOG
+NOVOS_POR_VEZ = 4       # dias antigos montados por execução (para não atrasar a coleta)
 RAIO_GARAGEM = 300      # metros
 
 
@@ -352,10 +353,19 @@ def indice_hist():
     return {"dias": {}}
 
 
-def guardar_dia(dados, situacao, idx):
+def situacao(v):
+    return v.get("s") if isinstance(v, dict) else v
+
+
+def guardar_dia(dados, sit, idx):
+    S = [x for x in dados["S"] if x["sit"] != "AGUARDANDO" or x["pct"]]
+    if not S and sit == "final":   # dia sem coleta registrada na INLOG
+        idx["dias"][dados["dia"]] = {"s": "vazio"}
+        return
     os.makedirs(HIST, exist_ok=True)
-    criptografar(json.dumps(dados, separators=(",", ":")).encode(), os.path.join(HIST, dados["dia"] + ".enc.json"))
-    idx["dias"][dados["dia"]] = situacao
+    criptografar(json.dumps(dados, separators=(",", ":")).encode(), os.path.join(HIST, dados["dia"] + ".enc.json"), True)
+    inc = sum(1 for x in dados["S"] if x["sit"] == "EXECUTADO" and x["pct"] < 90)
+    idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(x["pct"] for x in S) / len(S)) if S else 0, "n": len(S), "i": inc}
 
 
 def main():
@@ -375,19 +385,23 @@ def main():
     criptografar(json.dumps(dados, separators=(",", ":")).encode())
     # dias anteriores: fecha o de ontem e completa o histórico aos poucos
     feitos = 0
-    for k in range(1, DIAS_HIST + 1):
+    for k in range(1, DIAS_BUSCA + 1):
         d = (dt.date.fromisoformat(dia) - dt.timedelta(days=k)).isoformat()
-        if idx["dias"].get(d) == "final" or feitos >= NOVOS_POR_VEZ or k > 7 and d not in idx["dias"]:
+        if feitos >= NOVOS_POR_VEZ:
+            break
+        v = idx["dias"].get(d)
+        if isinstance(v, dict) and v.get("s") in ("final", "vazio"):   # (formato antigo sem resumo é refeito)
             continue
+        feitos += 1
         try:
             print("histórico do dia", d)
             dd, _ = montar(s, d, cad, "final")
             guardar_dia(dd, "final", idx)
-            feitos += 1
-        except SystemExit:
-            raise
-        except Exception as e:
-            print("dia", d, "falhou:", e)
+        except (SystemExit, Exception) as e:   # INLOG sem dados desse dia
+            ant = idx["dias"].get(d)
+            t = (ant.get("t", 0) if isinstance(ant, dict) else 0) + 1
+            print("dia", d, "falhou (%d):" % t, e)
+            idx["dias"][d] = {"s": "vazio"} if t >= 3 else {"s": "erro", "t": t}
     limite = (dt.date.fromisoformat(dia) - dt.timedelta(days=DIAS_HIST)).isoformat()
     for d in [d for d in idx["dias"] if d < limite]:
         idx["dias"].pop(d)
@@ -398,16 +412,21 @@ def main():
     json.dump(idx, open(os.path.join(HIST, "index.json"), "w"), sort_keys=True)
 
 
-def criptografar(raw, destino=SAIDA):
+def criptografar(raw, destino=SAIDA, comprimir=False):
     senha = os.environ.get("SENHA_SITE")
     if not senha:
         falha("cadastre o secret SENHA_SITE")
+    if comprimir:
+        raw = gzip.compress(raw, 9)
     sal, iv = os.urandom(16), os.urandom(12)
     chave = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=sal, iterations=200000).derive(senha.encode())
     ct = AESGCM(chave).encrypt(iv, raw, None)
     b = lambda v: base64.b64encode(v).decode()
     os.makedirs(os.path.dirname(destino), exist_ok=True)
-    json.dump({"v": 1, "sal": b(sal), "iv": b(iv), "dados": b(ct)}, open(destino, "w"))
+    e = {"v": 1, "sal": b(sal), "iv": b(iv), "dados": b(ct)}
+    if comprimir:
+        e["z"] = 1
+    json.dump(e, open(destino, "w"))
     print("ok:", os.path.basename(destino), os.path.getsize(destino) // 1024, "KB")
 
 
