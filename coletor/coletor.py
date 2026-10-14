@@ -31,8 +31,14 @@ DIAS_BUSCA = 120        # até quantos dias para trás o histórico é buscado n
 NOVOS_POR_VEZ = 4       # dias antigos montados por execução (para não atrasar a coleta)
 RAIO_GARAGEM = 300      # metros
 RAIO_ATERRO = 400       # metros em volta do ponto do aterro
+ACESSO_ATERRO = [  # via de acesso ao aterro (OpenStreetMap): Av. dos Angicos + estrada a oeste das lagoas
+    [[-16.64807, -49.51898], [-16.64806, -49.5196], [-16.6481, -49.52015], [-16.64819, -49.52062], [-16.64831, -49.52108], [-16.64846, -49.5217], [-16.64853, -49.52224], [-16.64857, -49.52283], [-16.64853, -49.52313], [-16.64844, -49.52357], [-16.64819, -49.52475], [-16.64815, -49.5259], [-16.64828, -49.52651], [-16.64849, -49.52698], [-16.64903, -49.52741], [-16.64925, -49.5277], [-16.64938, -49.52804], [-16.64986, -49.52977], [-16.64992, -49.53021], [-16.6499, -49.53112], [-16.64991, -49.5322], [-16.64985, -49.53282], [-16.6497, -49.53351], [-16.64968, -49.5336], [-16.64966, -49.53373], [-16.64956, -49.53432], [-16.64945, -49.53466], [-16.6484, -49.53653], [-16.64803, -49.53742], [-16.64788, -49.53799], [-16.64693, -49.5398], [-16.64675, -49.54011], [-16.64649, -49.5404], [-16.64607, -49.54087], [-16.64514, -49.54194]],
+    [[-16.64968, -49.5336], [-16.64978, -49.5337], [-16.64987, -49.53378], [-16.64996, -49.53383], [-16.65003, -49.53385], [-16.65012, -49.53385], [-16.65022, -49.53384], [-16.65043, -49.53381], [-16.6506, -49.53378], [-16.65074, -49.53377], [-16.65083, -49.53378], [-16.65096, -49.5338], [-16.65123, -49.53386], [-16.65212, -49.53406], [-16.65294, -49.53422], [-16.65436, -49.53452], [-16.65472, -49.53459], [-16.65504, -49.53466], [-16.65519, -49.53469], [-16.65546, -49.53474], [-16.65577, -49.53482], [-16.65601, -49.53487], [-16.65742, -49.53517], [-16.65815, -49.53536], [-16.65833, -49.53544], [-16.65866, -49.53564], [-16.65873, -49.53566], [-16.65889, -49.53569]],
+]
+RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
+JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
-VERSAO_HIST = 3         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+VERSAO_HIST = 4         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
 
 
 def falha(msg):
@@ -240,6 +246,22 @@ def garagem(trilha, gar):
 
 
 # ---------------------------------------------------------------- aterro
+def dist_linha(p, linha):
+    """Menor distância (m) entre o ponto e a polilinha."""
+    melhor = 1e9
+    for a, b in zip(linha, linha[1:]):
+        bx, by = (b[1] - a[1]) * 111320 * C, (b[0] - a[0]) * 110574
+        px, py = (p[1] - a[1]) * 111320 * C, (p[0] - a[0]) * 110574
+        L2 = bx * bx + by * by
+        t = max(0, min(1, (px * bx + py * by) / L2)) if L2 else 0
+        melhor = min(melhor, math.hypot(px - t * bx, py - t * by))
+    return melhor
+
+
+def na_via(pos):
+    return any(dist_linha(pos, l) <= RAIO_ACESSO for l in ACESSO_ATERRO)
+
+
 def aterro(por_veic, ater):
     """Passagens pelo aterro: entrada, saída, duração e velocidade máxima dentro (pelo GPS de cada veículo)."""
     vis = []
@@ -263,9 +285,15 @@ def aterro(por_veic, ater):
         dur = int((a["fim"] - a["ini"]).total_seconds())
         if a["n"] < 2 and dur < 60:
             continue
+        pts = por_veic[a["v"]]
+        ida = [pts[t][1] for t in pts if a["ini"] - dt.timedelta(seconds=JANELA_ACESSO) <= t < a["ini"]
+               and dist_m(pts[t][0], ater) > RAIO_ATERRO and na_via(pts[t][0])]
+        volta = [pts[t][1] for t in pts if a["fim"] < t <= a["fim"] + dt.timedelta(seconds=JANELA_ACESSO)
+                 and dist_m(pts[t][0], ater) > RAIO_ATERRO and na_via(pts[t][0])]
         out.append({"v": a["v"], "s": sorted(a["set"]), "ini": a["ini"].strftime("%Y-%m-%d %H:%M"), "fim": a["fim"].strftime("%Y-%m-%d %H:%M"),
-                    "dur": dur, "vmax": round(a["vmax"])})
-        print("    aterro", a["v"], out[-1]["ini"], "→", out[-1]["fim"][11:], dur // 60, "min · vmax", out[-1]["vmax"], "km/h")
+                    "dur": dur, "vmax": round(a["vmax"]), "vida": round(max(ida)) if ida else None, "vvolta": round(max(volta)) if volta else None})
+        print("    aterro", a["v"], out[-1]["ini"], "→", out[-1]["fim"][11:], dur // 60, "min · vmax", out[-1]["vmax"], "km/h",
+              "· via de acesso: chegada", out[-1]["vida"], "(%d pts)" % len(ida), "saída", out[-1]["vvolta"], "(%d pts)" % len(volta))
     return out
 
 
