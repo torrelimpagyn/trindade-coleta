@@ -335,7 +335,7 @@ function mostrarRua(st){
   let h = `<h2>Rua</h2><p class="addr">${esc(st.n)}${st.b ? `<span class="muted" style="display:block;font-weight:500">${esc(st.b)}</span>` : ''}</p>`;
   if (!st.sec.length){ setRes(''); L.popup().setLatLng(lines.flat()[Math.floor(lines.flat().length/2)]).setContent('<div class="pp" style="min-width:0">Rua fora da área de coleta domiciliar</div>').openOn(map); return; }
   {
-    if (st.sec.length > 1) h += `<div class="muted">A rua passa por ${st.sec.length} setores. Digite o número da casa ou toque no mapa para ver o horário exato.</div>`;
+    if (st.sec.length > 1) h += `<div class="muted">A rua passa por ${st.sec.length} setores. Digite o número da casa para ver o horário exato.</div>`;
     st.sec.forEach(([c]) => { const s = SEC[c]; const mid = midPoint(lines, c); h += secCard(s, mid && mid[0], mid && mid[1]); });
   }
   h += ultimaHTML(st.i);
@@ -383,7 +383,7 @@ function escolher(i){ const f = items[i]; sg.style.display = 'none'; q.blur(); i
 async function buscarTexto(v){
   sg.style.display = 'none';
   try { const r = await geocode(v + (/trindade/i.test(v) ? '' : ', Trindade, GO')); mostrarPonto(r.la, r.lo, r.t.split(', Goiás')[0]); }
-  catch (e) { const L0 = buscaLocal(v); if (L0.ruas[0]) mostrarRua(L0.ruas[0]); else setRes('<div class="warn">Não encontramos este endereço. Confira o nome da rua ou toque no mapa no local da sua casa.</div>'); }
+  catch (e) { const L0 = buscaLocal(v); if (L0.ruas[0]) mostrarRua(L0.ruas[0]); else setRes('<div class="warn">Não encontramos este endereço. Confira o nome da rua.</div>'); }
 }
 q.addEventListener('input', () => { $('#clr').style.display = q.value ? 'block' : 'none'; onlineSug = []; renderSug(); clearTimeout(tmr); const my = ++seq; if (q.value.trim().length >= 3) tmr = setTimeout(() => sugOnline(q.value.trim(), my), 280); });
 q.addEventListener('focus', () => { if (q.value.trim()) renderSug(); });
@@ -398,9 +398,8 @@ $('#clr').onclick = () => { q.value = ''; $('#clr').style.display = 'none'; sg.s
 $('#gps').onclick = () => {
   if (!navigator.geolocation){ setRes('<div class="warn">Seu navegador não permite localização.</div>'); return; }
   navigator.geolocation.getCurrentPosition(p => mostrarPonto(p.coords.latitude, p.coords.longitude, 'Minha localização'),
-    () => setRes('<div class="warn">Não foi possível obter sua localização. Pesquise pelo endereço ou toque no mapa.</div>'), { enableHighAccuracy: true, timeout: 10000 });
+    () => setRes('<div class="warn">Não foi possível obter sua localização. Pesquise pelo endereço.</div>'), { enableHighAccuracy: true, timeout: 10000 });
 };
-map.on('click', e => mostrarPonto(e.latlng.lat, e.latlng.lng, null, true));
 }
 </script>
 </body>
