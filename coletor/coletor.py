@@ -24,6 +24,11 @@ PARADA_MIN = 300   # segundos: paradas menores são as paradas normais de coleta
 TZ = ZoneInfo("America/Sao_Paulo")
 AQUI = os.path.dirname(os.path.abspath(__file__))
 SAIDA = os.path.join(AQUI, "..", "docs", "dados.enc.json")
+HIST = os.path.join(AQUI, "..", "docs", "hist")
+RAW_HIST = "https://raw.githubusercontent.com/{repo}/dados/hist/index.json"
+DIAS_HIST = 31          # quantos dias ficam guardados para consulta
+NOVOS_POR_VEZ = 3       # dias antigos montados por execução (para não atrasar a coleta)
+RAIO_GARAGEM = 300      # metros
 
 
 def falha(msg):
@@ -210,12 +215,30 @@ def seg(txt):
     return h * 3600 + m * 60 + s
 
 
+# ---------------------------------------------------------------- garagem
+def garagem(trilha, gar):
+    """Saída e retorno à garagem a partir do GPS do veículo (lista de (hora, (lat, lon)))."""
+    trilha = sorted(trilha)
+    if not trilha:
+        return None, None, None
+    dentro_g = [dist_m(p, gar) <= RAIO_GARAGEM for _, p in trilha]
+    saida = volta = None
+    for i in range(1, len(trilha)):
+        if dentro_g[i - 1] and not dentro_g[i]:
+            saida = trilha[i][0]; break
+    if dentro_g[-1] and not all(dentro_g):
+        i = len(trilha) - 1
+        while i > 0 and dentro_g[i - 1]:
+            i -= 1
+        if i > 0:
+            volta = trilha[i][0]
+    return saida, volta, trilha[0][0]
+
+
 # ---------------------------------------------------------------- principal
-def main():
-    agora = dt.datetime.now(TZ)
-    dia = (agora - dt.timedelta(hours=4)).date().isoformat()   # até 04h ainda conta o dia anterior (turno da tarde)
-    cad = json.load(open(os.path.join(AQUI, "setores_trindade.json")))
-    s = entrar()
+def montar(s, dia, cad, at):
+    """Monta o quadro de um dia (hoje ou um dia anterior)."""
+    gar = tuple(cad["garagem"])
     grid = pegar_json(s, GRID.format(d=dia))
     linhas = [x for x in grid["Data"]["Data"] if FILTRO in (x.get("MacroSetor") or "")]
     # A INLOG repete o mesmo setor em várias linhas (uma por viagem/veículo, ou uma "ATIVO" e outra "AGUARDANDO").
@@ -254,7 +277,7 @@ def main():
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
              "veic": list(veics.get(cod) or ([x["Veiculo"]] if x.get("Veiculo") else [])), "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])]}
-        pontos, t0, t1 = [], None, None
+        pontos, t0, t1, trilhas = [], None, None, {}
         if x.get("Controle") and x.get("CodigoSetor"):
             for c in pegar_json(s, ROTA.format(c=x["CodigoSetor"], d=dia_x)) or []:
                 v = (c.get("Veiculo") or {}).get("Identificador")
@@ -265,6 +288,7 @@ def main():
                 if ent and (o["entrada"] is None or ent[11:16] < o["entrada"]):
                     o["entrada"] = ent[11:16]
                 H = c.get("RastreamentoHistorico") or []
+                tr = trilhas.setdefault(v or "?", [])
                 for h in H:
                     o["dist"] += (h.get("Distancia") or 0) / 1000
                     t = dt.datetime.fromisoformat(h["DataHoraCompleta"][:19])
@@ -272,6 +296,7 @@ def main():
                     t1 = t if t1 is None or t > t1 else t1
                     pos = (h["Posicao"]["Latitude"], h["Posicao"]["Longitude"])
                     pontos.append(pos)
+                    tr.append((t, pos))
                     gps_dia.append((t, pos[0], pos[1], h.get("Velocidade") or 0))
                 for p in c.get("PontosParada") or []:   # só paradas longas (>= 5 min) dentro do setor
                     d = seg(p.get("TempoParado"))
@@ -282,6 +307,21 @@ def main():
                         continue
                     o["par"].append([(p.get("DataHoraInicio") or "")[11:16], (p.get("DataHoraFim") or "")[11:16], d, round(pt[0], 5), round(pt[1], 5)])
                     o["stop"] += d
+        sai = []
+        for v, tr in trilhas.items():
+            a, b, c0 = garagem(tr, gar)
+            if a or c0:
+                sai.append((a, b, c0, v))
+            if c0:
+                print("   ", cod, v, "1º ponto %s a %d m da garagem" % (c0.strftime("%H:%M"), dist_m(sorted(tr)[0][1], gar)),
+                      "· saída", a and a.strftime("%H:%M"), "· retorno", b and b.strftime("%H:%M"))
+        com = sorted([x for x in sai if x[0]], key=lambda x: x[0])
+        if com:
+            o["saida"] = com[0][0].strftime("%H:%M")
+            vs = [x[1] for x in com if x[1]]
+            o["volta"] = max(vs).strftime("%H:%M") if vs else None
+        elif sai:
+            o["rast0"] = min(x[2] for x in sai).strftime("%H:%M")   # GPS já começou fora da garagem
         if t0 and t1 and t1 > t0:
             o["vel"] = round(o["dist"] / ((t1 - t0).total_seconds() / 3600), 1)
         o["dist"] = round(o["dist"], 1)
@@ -294,7 +334,37 @@ def main():
                 print("  rota", cod, "indisponível:", e)
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%")
-    dados = {"dia": dia, "at": agora.strftime("%H:%M"), "garagem": cad["garagem"], "S": setores}
+    return {"dia": dia, "at": at, "garagem": cad["garagem"], "S": setores}, gps_dia
+
+
+def indice_hist():
+    arq = os.path.join(HIST, "index.json")
+    if os.path.exists(arq):
+        return json.load(open(arq))
+    try:
+        repo = os.environ.get("GITHUB_REPOSITORY", "torrelimpagyn/trindade-coleta")
+        r = requests.get(RAW_HIST.format(repo=repo) + "?t=%d" % dt.datetime.now().timestamp(), timeout=30)
+        if r.ok:
+            return r.json()
+    except Exception as ex:
+        print("sem índice do histórico:", ex)
+    return {"dias": {}}
+
+
+def guardar_dia(dados, situacao, idx):
+    os.makedirs(HIST, exist_ok=True)
+    criptografar(json.dumps(dados, separators=(",", ":")).encode(), os.path.join(HIST, dados["dia"] + ".enc.json"))
+    idx["dias"][dados["dia"]] = situacao
+
+
+def main():
+    agora = dt.datetime.now(TZ)
+    dia = (agora - dt.timedelta(hours=4)).date().isoformat()   # até 04h ainda conta o dia anterior (turno da tarde)
+    cad = json.load(open(os.path.join(AQUI, "setores_trindade.json")))
+    s = entrar()
+    dados, gps_dia = montar(s, dia, cad, agora.strftime("%H:%M"))
+    idx = indice_hist()
+    guardar_dia(dados, "parcial", idx)
     try:
         dados["ruas"] = historico_ruas(s, dia, gps_dia)
     except SystemExit:
@@ -302,9 +372,32 @@ def main():
     except Exception as e:   # a consulta de ruas nunca derruba o painel
         print("histórico das ruas indisponível:", e)
     criptografar(json.dumps(dados, separators=(",", ":")).encode())
+    # dias anteriores: fecha o de ontem e completa o histórico aos poucos
+    feitos = 0
+    for k in range(1, DIAS_HIST + 1):
+        d = (dt.date.fromisoformat(dia) - dt.timedelta(days=k)).isoformat()
+        if idx["dias"].get(d) == "final" or feitos >= NOVOS_POR_VEZ or k > 7 and d not in idx["dias"]:
+            continue
+        try:
+            print("histórico do dia", d)
+            dd, _ = montar(s, d, cad, "final")
+            guardar_dia(dd, "final", idx)
+            feitos += 1
+        except SystemExit:
+            raise
+        except Exception as e:
+            print("dia", d, "falhou:", e)
+    limite = (dt.date.fromisoformat(dia) - dt.timedelta(days=DIAS_HIST)).isoformat()
+    for d in [d for d in idx["dias"] if d < limite]:
+        idx["dias"].pop(d)
+        try:
+            os.remove(os.path.join(HIST, d + ".enc.json"))
+        except OSError:
+            pass
+    json.dump(idx, open(os.path.join(HIST, "index.json"), "w"), sort_keys=True)
 
 
-def criptografar(raw):
+def criptografar(raw, destino=SAIDA):
     senha = os.environ.get("SENHA_SITE")
     if not senha:
         falha("cadastre o secret SENHA_SITE")
@@ -312,9 +405,9 @@ def criptografar(raw):
     chave = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=sal, iterations=200000).derive(senha.encode())
     ct = AESGCM(chave).encrypt(iv, raw, None)
     b = lambda v: base64.b64encode(v).decode()
-    os.makedirs(os.path.dirname(SAIDA), exist_ok=True)
-    json.dump({"v": 1, "sal": b(sal), "iv": b(iv), "dados": b(ct)}, open(SAIDA, "w"))
-    print("ok:", os.path.getsize(SAIDA) // 1024, "KB")
+    os.makedirs(os.path.dirname(destino), exist_ok=True)
+    json.dump({"v": 1, "sal": b(sal), "iv": b(iv), "dados": b(ct)}, open(destino, "w"))
+    print("ok:", os.path.basename(destino), os.path.getsize(destino) // 1024, "KB")
 
 
 if __name__ == "__main__":
