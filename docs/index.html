@@ -8,8 +8,10 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 header{position:sticky;top:0;z-index:20;background:var(--g);color:#fff;padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
-header h1{font-size:17px;margin:0}header .s{font-size:12.5px;opacity:.9;margin-top:2px}
+header h1{font-size:17px;margin:0}
+.cons{float:right;color:#fff;background:rgba(255,255,255,.18);border-radius:999px;padding:5px 11px;font-size:12.5px;font-weight:700;text-decoration:none;margin-top:-2px}header .s{font-size:12.5px;opacity:.9;margin-top:2px}
 .wrap{max-width:760px;margin:0 auto;padding:12px 16px 40px}
+.dias{display:flex;gap:6px;margin-bottom:10px}.dias button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;width:42px;font:inherit;font-weight:700;font-size:18px}.dias button:disabled{opacity:.35}.dias select{flex:1;min-width:0;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:9px 10px;font:inherit;font-weight:600}.past{background:var(--ambbg);color:var(--amb);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;margin-bottom:10px}
 .tabs{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;margin-bottom:12px}
 .tabs button{flex:1;border:0;background:none;padding:8px;border-radius:9px;font:inherit;font-weight:600;color:var(--mut)}
 .tabs button.on{background:var(--g);color:#fff}
@@ -38,30 +40,35 @@ header h1{font-size:17px;margin:0}header .s{font-size:12.5px;opacity:.9;margin-t
 .truck{background:#2a78d6;border:2px solid #fff;border-radius:50%;width:18px;height:18px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
 .lock{max-width:360px;margin:60px auto;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}.lock input{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin:10px 0;background:var(--bg);color:var(--ink)}.lock button{width:100%;border:0;background:var(--g);color:#fff;border-radius:10px;padding:10px;font:inherit;font-weight:700}.err{color:var(--red);font-size:13px;margin-top:8px}.note{color:var(--mut);font-size:11.5px;text-align:center;margin-top:14px}
 </style></head><body>
-<header><h1>Coleta Trindade · Hoje</h1><div class="s" id="sub"></div></header>
+<header><a class="cons" href="consulta.html">Consultar endereço ›</a><h1 id="tit">Coleta Trindade · Hoje</h1><div class="s" id="sub"></div></header>
 <div class="lock" id="lock" hidden><b>Acesso restrito</b><div style="color:var(--mut);font-size:13px">Digite a senha para ver a coleta de Trindade.</div><input id="pw" type="password" autocomplete="current-password" placeholder="Senha"><button id="go">Entrar</button><div class="err" id="err"></div></div>
 <div class="wrap" id="app" hidden>
+ <div class="dias"><button id="prev" aria-label="Dia anterior">‹</button><select id="sel" aria-label="Escolher dia"></select><button id="next" aria-label="Dia seguinte">›</button></div><div class="past" id="past" hidden></div>
  <div class="tabs"><button data-t="MATUTINO" class="on">Manhã</button><button data-t="VESPERTINO">Tarde</button></div>
  <div class="sum" id="sum"></div><div id="list"></div>
- <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Percentual executado = percentual da própria INLOG. No mapa aparece a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar.</div>
+ <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Os dias anteriores ficam guardados por 31 dias. Saída/retorno à garagem calculados pelo GPS do veículo (raio de 300 m da garagem). Percentual executado = percentual da própria INLOG. No mapa aparece a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar.</div>
 </div>
 <div id="sheet"><div class="hd"><button id="back">‹ Voltar</button><h2 id="shT"></h2></div><div id="map"></div><div class="ft" id="shF"></div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-let D=null;let TURNO=(new Date().getHours()>=14)?'VESPERTINO':'MATUTINO',OPEN=new Set();
+let D=null,DIA=null,IDX={};let TURNO=(new Date().getHours()>=14)?'VESPERTINO':'MATUTINO',OPEN=new Set();
 const nf=(v,d=0)=>Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const hm=s=>{const h=Math.floor(s/3600),m=Math.round(s%3600/60);return h?`${h}h ${String(m).padStart(2,'0')}min`:`${m} min`};
 const SIT={ATIVO:['Em execução','st-a'],AGUARDANDO:['Aguardando','st-w'],EXECUTADO:['Finalizado','st-e']};
 function render(){
- const [y,mo,da]=D.dia.split('-');document.getElementById('sub').textContent=`${da}/${mo}/${y} · atualizado às ${D.at}`;
+ const [y,mo,da]=D.dia.split('-'),hj=!DIA;document.getElementById('tit').textContent='Coleta Trindade · '+(hj?'Hoje':`${da}/${mo}`);
+ document.getElementById('sub').textContent=hj?`${da}/${mo}/${y} · atualizado às ${D.at}`:`${WD[new Date(+y,mo-1,+da).getDay()]}, ${da}/${mo}/${y} · ${D.at==='final'?'dia encerrado':'parcial até '+D.at}`;
+ const pa=document.getElementById('past');pa.hidden=hj;pa.textContent=hj?'':'Você está vendo um dia anterior. Escolha "Hoje" para voltar ao acompanhamento ao vivo.';
  const S=D.S.filter(s=>s.turno===TURNO);
  const inc=S.filter(s=>s.sit==='EXECUTADO'&&s.pct<90).length,at=S.filter(s=>s.sit==='ATIVO').length,ag=S.filter(s=>s.sit==='AGUARDANDO').length,av=S.reduce((a,s)=>a+s.pct,0)/S.length;
- document.getElementById('sum').innerHTML=`<div><b>${nf(av)}%</b><small>média executada</small></div><div><b>${at}</b><small>em execução</small></div><div><b>${ag}</b><small>aguardando saída</small></div>${inc?`<div style="grid-column:1/-1;border-color:var(--red);background:var(--redbg)"><b style="font-size:15px;color:var(--red)">${inc} setor${inc>1?'es':''} encerrado${inc>1?'s':''} sem concluir</b><small>A INLOG fechou o setor com menos de 90% executado</small></div>`:''}`;
+ document.getElementById('sum').innerHTML=`<div><b>${nf(av)}%</b><small>média executada</small></div><div><b>${at}</b><small>em execução</small></div><div><b>${ag}</b><small>${hj?'aguardando saída':'não saíram'}</small></div>${inc?`<div style="grid-column:1/-1;border-color:var(--red);background:var(--redbg)"><b style="font-size:15px;color:var(--red)">${inc} setor${inc>1?'es':''} encerrado${inc>1?'s':''} sem concluir</b><small>A INLOG fechou o setor com menos de 90% executado</small></div>`:''}`;
  document.getElementById('list').innerHTML=S.map(s=>{const inc=s.sit==='EXECUTADO'&&s.pct<90;const st=inc?['Encerrado sem concluir','st-r']:(SIT[s.sit]||[s.sit,'st-w']);return `<div class="sec ${OPEN.has(s.s)?'open':''}" data-c="${s.s}">
   <div class="sh"><span class="tag">RSU</span><span class="nm">${s.s}<span class="sit ${st[1]}">${st[0]}</span></span><span class="pc"${inc?' style="color:var(--red)"':''}>${nf(s.pct)}%</span><span class="ch">▼</span></div>
   <div class="bar"><span style="width:${s.pct}%${inc?';background:var(--red)':''}"></span></div>
   <div class="det"><span class="pill">${s.s}</span>
+   <div class="kv"><span>Saída da garagem</span><b>${s.saida||(s.rast0?'GPS desde '+s.rast0:'—')}</b></div>
    <div class="kv"><span>Entrada no setor</span><b>${s.entrada||'—'}</b></div>
+   ${s.volta?`<div class="kv"><span>Retorno à garagem</span><b>${s.volta}</b></div>`:''}
    ${(s.veic.length?s.veic:['—']).map((v,i)=>`<div class="kv"><span>Veículo ${i+1}</span><b>${v}</b></div>`).join('')}
    <div class="kv"><span>Distância percorrida</span><b>${s.dist?nf(s.dist,1)+' km':'—'}</b></div>
    <div class="kv"><span>Velocidade média</span><b>${s.vel?nf(s.vel,1)+' km/h':'—'}</b></div>
@@ -82,23 +89,32 @@ function openMap(c){const s=D.S.find(x=>x.s===c);document.getElementById('sheet'
  const L0=s.lin||[];L.polyline(L0.filter(l=>!l[0]).map(l=>l[1]),{color:'#d13b30',weight:4,opacity:.9}).addTo(lay);
  L.polyline(L0.filter(l=>l[0]).map(l=>l[1]),{color:'#1a8a4a',weight:4.5}).addTo(lay);
  (s.par||[]).forEach(p=>L.circleMarker([p[3],p[4]],{radius:9,color:'#fff',weight:2,fillColor:'#e08a00',fillOpacity:1}).bindTooltip(`Parada ${p[0]}–${p[1]} · ${hm(p[2])}`).addTo(lay));
- if(s.pos&&s.sit==='ATIVO')L.marker(s.pos,{icon:L.divIcon({className:'',html:'<div class="truck"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(lay);
+ if(!DIA&&s.pos&&s.sit==='ATIVO')L.marker(s.pos,{icon:L.divIcon({className:'',html:'<div class="truck"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(lay);
  document.getElementById('shT').textContent='Setor '+s.s+' · '+nf(s.pct)+'%';
  document.getElementById('shF').innerHTML=`${(s.veic||[]).join(', ')} · última posição ${s.ult||'—'}<div class="leg"><span><i style="background:#1a8a4a"></i>Executado</span><span><i style="background:#d13b30"></i>Falta executar</span><span><i style="background:#e08a00;width:10px;height:10px;border-radius:50%"></i>Parada longa</span></div>`;
  setTimeout(()=>{map.invalidateSize();map.fitBounds(L.latLngBounds((s.lin||[]).length?s.lin.flatMap(l=>l[1]):s.ring.flat()),{padding:[20,20]})},30);}
 document.getElementById('back').onclick=()=>document.getElementById('sheet').classList.remove('open');
 document.querySelectorAll('.tabs button').forEach(b=>{b.classList.toggle('on',b.dataset.t===TURNO);b.onclick=()=>{TURNO=b.dataset.t;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));render()}});
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
-const RAW='https://raw.githubusercontent.com/torrelimpagyn/trindade-coleta/dados/dados.enc.json';
-async function baixar(){try{const r=await fetch(RAW+'?t='+Date.now(),{cache:'no-store'});if(r.ok)return await r.json()}catch(e){}const r=await fetch('dados.enc.json?t='+Date.now(),{cache:'no-store'});return await r.json()}
-async function abrir(pw){const e=await baixar();
+const BASE='https://raw.githubusercontent.com/torrelimpagyn/trindade-coleta/dados/',WD=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+async function baixar(arq){try{const r=await fetch(BASE+arq+'?t='+Date.now(),{cache:'no-store'});if(r.ok)return await r.json()}catch(e){}if(arq.startsWith('hist/'))throw new Error('sem dados');const r=await fetch(arq+'?t='+Date.now(),{cache:'no-store'});return await r.json()}
+async function indice(){try{IDX=(await baixar('hist/index.json')).dias||{}}catch(e){IDX={}}
+ const sel=document.getElementById('sel'),hoje=D?D.dia:'',dias=Object.keys(IDX).filter(d=>d!==hoje).sort().reverse();
+ const f=d=>{const [y,m,a]=d.split('-');return `${WD[new Date(+y,m-1,+a).getDay()]}, ${a}/${m}`};
+ sel.innerHTML='<option value="">Hoje (ao vivo)</option>'+dias.map(d=>`<option value="${d}">${f(d)}${IDX[d]==='final'?'':' · parcial'}</option>`).join('');sel.value=DIA||'';botoes()}
+function botoes(){const o=[...document.getElementById('sel').options].map(x=>x.value),i=o.indexOf(DIA||'');document.getElementById('next').disabled=i<=0;document.getElementById('prev').disabled=i>=o.length-1}
+async function irPara(d){DIA=d||null;OPEN.clear();document.getElementById('sel').value=d||'';botoes();document.getElementById('list').innerHTML='<div class="note">Carregando…</div>';await carregar()}
+document.getElementById('sel').onchange=e=>irPara(e.target.value);
+document.getElementById('prev').onclick=()=>{const s=document.getElementById('sel');if(s.selectedIndex<s.options.length-1)irPara(s.options[s.selectedIndex+1].value)};
+document.getElementById('next').onclick=()=>{const s=document.getElementById('sel');if(s.selectedIndex>0)irPara(s.options[s.selectedIndex-1].value)};
+async function abrir(pw){const e=await baixar(DIA?'hist/'+DIA+'.enc.json':'dados.enc.json');
  const k0=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
  const k=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(e.sal),iterations:200000,hash:'SHA-256'},k0,{name:'AES-GCM',length:256},false,['decrypt']);
  const raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(e.iv)},k,b64(e.dados));return JSON.parse(new TextDecoder().decode(raw))}
 async function carregar(){const pw=localStorage.getItem('tc_pw');if(!pw){document.getElementById('lock').hidden=false;return}
- try{D=await abrir(pw);document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;render()}
- catch(e){localStorage.removeItem('tc_pw');document.getElementById('app').hidden=true;document.getElementById('lock').hidden=false;document.getElementById('err').textContent='Senha incorreta ou dados indisponíveis.'}}
+ try{D=await abrir(pw);document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;render();if(!DIA&&!Object.keys(IDX).length)indice()}
+ catch(e){if(DIA){document.getElementById('list').innerHTML='<div class="note">Não há dados guardados desse dia.</div>';return}localStorage.removeItem('tc_pw');document.getElementById('app').hidden=true;document.getElementById('lock').hidden=false;document.getElementById('err').textContent='Senha incorreta ou dados indisponíveis.'}}
 document.getElementById('go').onclick=()=>{try{localStorage.setItem('tc_pw',document.getElementById('pw').value)}catch(e){}carregar()};
 document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
-carregar();setInterval(()=>{if(D&&!document.getElementById('sheet').classList.contains('open'))carregar()},120000);
+carregar();setInterval(()=>{if(!DIA)indice()},900000);setInterval(()=>{if(D&&!DIA&&!document.getElementById('sheet').classList.contains('open'))carregar()},120000);
 </script></body></html>
