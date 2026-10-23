@@ -131,6 +131,48 @@ def simplificar(pts, tol=6):
     return [pts[i] for i in sorted(manter)]
 
 
+def cobertura(lin, trv, raio=25, vel_max=25):
+    """Percentual da rota programada (lin) por onde o GPS passou devagar (coletando), a até `raio` metros.
+    trv = {veículo: [(hora, (lat, lon), velocidade)]}."""
+    xy = lambda p: (p[1] * 111320 * C, p[0] * 110574)
+    segs, grade = [], {}
+    for pts in trv.values():
+        u = sorted({t: (p, vel) for t, p, vel in pts}.items())
+        for (t1, (a, va)), (t2, (b, vb)) in zip(u, u[1:]):
+            if (t2 - t1).total_seconds() > 180 or min(va, vb) > vel_max:
+                continue   # buraco no GPS ou trecho rodado rápido (só passando)
+            A, B = xy(a), xy(b)
+            k = len(segs); segs.append((A, B))
+            n = max(1, int(math.hypot(B[0] - A[0], B[1] - A[1]) // 25))
+            for j in range(n + 1):
+                q = (A[0] + (B[0] - A[0]) * j / n, A[1] + (B[1] - A[1]) * j / n)
+                grade.setdefault((int(q[0] // 50), int(q[1] // 50)), set()).add(k)
+
+    def perto(p):
+        cx, cy = int(p[0] // 50), int(p[1] // 50)
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for k in grade.get((cx + di, cy + dj), ()):
+                    (ax, ay), (bx, by) = segs[k]
+                    dx, dy = bx - ax, by - ay
+                    L = dx * dx + dy * dy
+                    t = max(0, min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy) / L)) if L else 0
+                    if math.hypot(p[0] - ax - t * dx, p[1] - ay - t * dy) <= raio:
+                        return True
+        return False
+    tot = ok = 0
+    for _, pts in lin:
+        P = [xy(q) for q in pts]
+        for a, b in zip(P, P[1:]):
+            L = math.hypot(b[0] - a[0], b[1] - a[1]); n = max(1, int(math.ceil(L / 10)))
+            for j in range(n):
+                q = (a[0] + (b[0] - a[0]) * (j + .5) / n, a[1] + (b[1] - a[1]) * (j + .5) / n)
+                tot += L / n
+                if perto(q):
+                    ok += L / n
+    return round(100 * ok / tot, 1) if tot else None
+
+
 def dentro(pt, anel):
     y, x = pt; ok = False
     for i in range(len(anel)):
@@ -382,7 +424,7 @@ def montar(s, dia, cad, at):
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
              "veic": list(veics.get(cod) or ([x["Veiculo"]] if x.get("Veiculo") else [])), "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])]}
-        pontos, t0, t1, trilhas, km_pt = [], None, None, {}, {}
+        pontos, t0, t1, trilhas, km_pt, trv = [], None, None, {}, {}, {}
         if x.get("Controle") and x.get("CodigoSetor"):
             for c in pegar_json(s, ROTA.format(c=x["CodigoSetor"], d=dia_x)) or []:
                 v = (c.get("Veiculo") or {}).get("Identificador")
@@ -402,6 +444,7 @@ def montar(s, dia, cad, at):
                     pos = (h["Posicao"]["Latitude"], h["Posicao"]["Longitude"])
                     pontos.append(pos)
                     tr.append((t, pos))
+                    trv.setdefault(v or "?", []).append((t, pos, h.get("Velocidade") or 0))
                     gps_dia.append((t, pos[0], pos[1], h.get("Velocidade") or 0))
                     por_veic.setdefault(v or "?", {})[t] = (pos, h.get("Velocidade") or 0, cod)
                 for p in c.get("PontosParada") or []:   # só paradas longas (>= 5 min) dentro do setor
@@ -448,13 +491,15 @@ def montar(s, dia, cad, at):
         if x.get("CodigoSetor"):
             try:
                 o["lin"], o["pctmapa"], o["rotas"] = rota_inlog(s, x["CodigoSetor"], dia_x, bool(x.get("Controle")), dia)
+                if trv and o["lin"]:
+                    o["pgps"] = cobertura(o["lin"], trv)   # percentual executado medido pelo GPS
             except SystemExit:
                 raise
             except Exception as e:   # sem rota programada: o card continua funcionando
                 print("  rota", cod, "indisponível:", e)
         o.pop("_ent", None)
         setores.append(o)
-        print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%")
+        print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%", "gps:", o.get("pgps"), "%")
     return {"dia": dia, "at": at, "garagem": cad["garagem"], "S": setores, "aterro": aterro(por_veic, tuple(cad["aterro"]))}, gps_dia
 
 
