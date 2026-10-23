@@ -89,6 +89,48 @@ def dec(txt):
     return out
 
 
+def b36(n):
+    d, neg, n, r = "0123456789abcdefghijklmnopqrstuvwxyz", n < 0, abs(n), ""
+    while True:
+        r = d[n % 36] + r; n //= 36
+        if not n:
+            return ("-" if neg else "") + r
+
+
+def enc(pts):
+    """Inverso de dec(): deltas em base 36 com 5 casas decimais."""
+    out, la, lo = [], 0, 0
+    for a, b in pts:
+        A, B = round(a * 1e5), round(b * 1e5)
+        out += [b36(A - la), b36(B - lo)]; la, lo = A, B
+    return ",".join(out)
+
+
+def simplificar(pts, tol=6):
+    """Douglas-Peucker em metros: tira pontos redundantes do rastreio sem mudar o desenho."""
+    if len(pts) < 3:
+        return list(pts)
+    manter, pilha = {0, len(pts) - 1}, [(0, len(pts) - 1)]
+    while pilha:
+        i, j = pilha.pop()
+        a, b = pts[i], pts[j]
+        ab = dist_m(a, b)
+        best, k = -1, None
+        for m in range(i + 1, j):
+            p = pts[m]
+            if ab < 1:
+                dd = dist_m(p, a)
+            else:
+                x1, y1 = (b[1] - a[1]) * 111320 * C, (b[0] - a[0]) * 110574
+                x0, y0 = (p[1] - a[1]) * 111320 * C, (p[0] - a[0]) * 110574
+                dd = abs(x1 * y0 - y1 * x0) / ab
+            if dd > best:
+                best, k = dd, m
+        if best > tol:
+            manter.add(k); pilha += [(i, k), (k, j)]
+    return [pts[i] for i in sorted(manter)]
+
+
 def dentro(pt, anel):
     y, x = pt; ok = False
     for i in range(len(anel)):
@@ -183,7 +225,8 @@ def estado_anterior():
         e = requests.get(RAW_DADOS.format(repo=repo) + "?t=%d" % dt.datetime.now().timestamp(), timeout=30).json()
         b = lambda v: base64.b64decode(v)
         chave = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=b(e["sal"]), iterations=200000).derive(os.environ["SENHA_SITE"].encode())
-        return json.loads(AESGCM(chave).decrypt(b(e["iv"]), b(e["dados"]), None)).get("ruas")
+        raw = AESGCM(chave).decrypt(b(e["iv"]), b(e["dados"]), None)
+        return json.loads(gzip.decompress(raw) if e.get("z") else raw).get("ruas")
     except Exception as ex:
         print("sem histórico anterior das ruas:", ex)
         return None
@@ -339,7 +382,7 @@ def montar(s, dia, cad, at):
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
              "veic": list(veics.get(cod) or ([x["Veiculo"]] if x.get("Veiculo") else [])), "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])]}
-        pontos, t0, t1, trilhas = [], None, None, {}
+        pontos, t0, t1, trilhas, km_pt = [], None, None, {}, {}
         if x.get("Controle") and x.get("CodigoSetor"):
             for c in pegar_json(s, ROTA.format(c=x["CodigoSetor"], d=dia_x)) or []:
                 v = (c.get("Veiculo") or {}).get("Identificador")
@@ -352,8 +395,8 @@ def montar(s, dia, cad, at):
                 H = c.get("RastreamentoHistorico") or []
                 tr = trilhas.setdefault(v or "?", [])
                 for h in H:
-                    o["dist"] += (h.get("Distancia") or 0) / 1000
                     t = dt.datetime.fromisoformat(h["DataHoraCompleta"][:19])
+                    km_pt[(v, t)] = (h.get("Distancia") or 0) / 1000   # mesmo ponto em dois controles conta uma vez só
                     t0 = t if t0 is None or t < t0 else t0
                     t1 = t if t1 is None or t > t1 else t1
                     pos = (h["Posicao"]["Latitude"], h["Posicao"]["Longitude"])
@@ -377,6 +420,13 @@ def montar(s, dia, cad, at):
         p = (noset or (cand if te else []) or [None])[0]
         if p:
             o["ini"] = [round(p[1][0], 5), round(p[1][1], 5), p[0].strftime("%H:%M")]
+        o["dist"] = sum(km_pt.values())
+        # Rastreio do GPS (o mesmo que a INLOG desenha), um por veículo, sem pontos repetidos
+        o["gps"] = []
+        for v, tr in trilhas.items():
+            u = sorted(dict(tr).items())
+            if len(u) > 1:
+                o["gps"].append([v, u[0][0].strftime("%H:%M"), u[-1][0].strftime("%H:%M"), enc(simplificar([q for _, q in u]))])
         sai = []
         for v, tr in trilhas.items():
             a, b, c0 = garagem(tr, gar)
