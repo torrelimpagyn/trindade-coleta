@@ -160,7 +160,9 @@ async function carregarUlt(){
     if (!e) e = await (await fetch('dados.enc.json?t=' + Date.now(), { cache: 'no-store' })).json();
     const k0 = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
     const k = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64(e.sal), iterations: 200000, hash: 'SHA-256' }, k0, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-    const D = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(e.iv) }, k, b64(e.dados))));
+    let raw = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(e.iv) }, k, b64(e.dados));
+    if (e.z) raw = await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    const D = JSON.parse(new TextDecoder().decode(raw));
     ULT = D.ruas || null; ULT_AT = D.at; if (!ULT) ULT_ERR = 'sem';
   } catch (e) { ULT_ERR = 'senha'; }
 }
