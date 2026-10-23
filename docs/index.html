@@ -49,6 +49,7 @@ header h1{font-size:17px;margin:0}
 .truck{background:#2a78d6;border:3px solid #fff;border-radius:50%;width:26px;height:26px;box-shadow:0 1px 5px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:13px}
 .ini{background:#1a8a4a;border:3px solid #fff;border-radius:50%;width:24px;height:24px;box-shadow:0 1px 5px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:12px}
 .nav{display:flex;align-items:center;gap:10px;margin-top:8px;border-radius:10px;padding:11px 12px;font-weight:700;font-size:14.5px;text-decoration:none;background:#2a78d6;color:#fff}.nav small{margin-left:auto;font-weight:600;font-size:11.5px;opacity:.9;text-align:right}.nav.n2{background:var(--card);color:#1a8a4a;border:1.5px solid #1a8a4a}
+.lt{display:flex;gap:6px;margin:6px 0 2px}.lt button{flex:1;border:1px solid var(--line);background:var(--soft);color:var(--mut);border-radius:999px;padding:6px 8px;font:inherit;font-size:12.5px;font-weight:700}.lt button.on{background:#1f3fbf;border-color:#1f3fbf;color:#fff}.lt button.on[data-l=r]{background:#1a8a4a;border-color:#1a8a4a}
 .leaflet-popup-content .nav{font-size:13px;padding:9px 10px;margin-top:6px}.leaflet-popup-content .nav.n2{background:#fff}.leaflet-container a.nav{color:#fff}.leaflet-container a.nav.n2{color:#1a8a4a}
 .lock{max-width:360px;margin:60px auto;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}.lock input{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin:10px 0;background:var(--bg);color:var(--ink)}.lock button{width:100%;border:0;background:var(--g);color:#fff;border-radius:10px;padding:10px;font:inherit;font-weight:700}.err{color:var(--red);font-size:13px;margin-top:8px}.note{color:var(--mut);font-size:11.5px;text-align:center;margin-top:14px}
 </style></head><body>
@@ -60,7 +61,7 @@ header h1{font-size:17px;margin:0}
  <div id="vCol"><div class="tabs"><button data-t="MATUTINO" class="on">Manhã</button><button data-t="VESPERTINO">Tarde</button></div>
  <div class="sum" id="sum"></div><div id="list"></div></div>
  <div id="vAte" hidden><div class="sum" id="aSum" style="grid-template-columns:repeat(2,1fr)"></div><div id="aList"></div></div>
- <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Use o calendário para ver dias anteriores (guardados por mais de um ano). Saída/retorno à garagem calculados pelo GPS do veículo (raio de 300 m da garagem). Aterro: entrada e saída pelo GPS, num raio de 400 m do aterro; velocidade máxima = maior velocidade registrada pelo GPS lá dentro. Via de acesso = Av. dos Angicos e a estrada a oeste das lagoas até o aterro (até 40 min antes da entrada e depois da saída). Percentual executado = percentual da própria INLOG. "Ir até o veículo" abre o GPS do celular até a última posição enviada pelo veículo (só para setores em execução); "Ir ao ponto inicial" leva ao primeiro ponto de GPS do veículo dentro do setor depois da entrada. No mapa aparece a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar.</div>
+ <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Use o calendário para ver dias anteriores (guardados por mais de um ano). Saída/retorno à garagem calculados pelo GPS do veículo (raio de 300 m da garagem). Aterro: entrada e saída pelo GPS, num raio de 400 m do aterro; velocidade máxima = maior velocidade registrada pelo GPS lá dentro. Via de acesso = Av. dos Angicos e a estrada a oeste das lagoas até o aterro (até 40 min antes da entrada e depois da saída). Percentual executado = percentual da própria INLOG. "Ir até o veículo" abre o GPS do celular até a última posição enviada pelo veículo (só para setores em execução); "Ir ao ponto inicial" leva ao primeiro ponto de GPS do veículo dentro do setor depois da entrada. No mapa aparecem o rastreio do GPS do veículo (azul, o mesmo caminho que a INLOG mostra) e a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar. Os botões acima do mapa ligam e desligam cada um.</div>
 </div>
 <div id="sheet"><div class="hd"><button id="back">‹ Voltar</button><h2 id="shT"></h2></div><div id="map"></div><div class="ft" id="shF"></div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -102,7 +103,7 @@ function renderCol(){
    <div class="kv"><span>Última posição</span><b>${s.ult||'—'}</b></div>
    ${s.ini?`<div class="kv"><span>Início da rota (1º ponto no setor)</span><b>${s.ini[2]}</b></div>`:''}
    ${navBtns(s)}
-   ${(s.lin||[]).length?`<button class="btn" data-m="${s.s}">Ver no mapa</button>`:''}</div></div>`}).join('');
+   ${(s.lin||[]).length||(s.gps||[]).length?`<button class="btn" data-m="${s.s}">Ver no mapa</button>`:''}</div></div>`}).join('');
  document.querySelectorAll('.sh').forEach(h=>h.onclick=()=>{const c=h.parentNode.dataset.c;OPEN.has(c)?OPEN.delete(c):OPEN.add(c);render()});
  document.querySelectorAll('.btn[data-m]').forEach(b=>b.onclick=e=>{e.stopPropagation();openMap(b.dataset.m)});
 }
@@ -111,6 +112,8 @@ const vivo=s=>!DIA&&s.sit==='ATIVO'&&s.pos;
 const navVei=s=>vivo(s)?`<a class="nav" target="_blank" rel="noopener" href="${rotaAte(s.pos)}">🚛 Ir até o veículo<small>posição das ${s.ult||'—'}</small></a>`:'';
 const navIni=s=>s.ini?`<a class="nav n2" target="_blank" rel="noopener" href="${rotaAte(s.ini)}">🏁 Ir ao ponto inicial<small>começou às ${s.ini[2]}</small></a>`:'';
 const navBtns=s=>navVei(s)+navIni(s);
+const d36=t=>{const v=t?t.split(',').map(x=>parseInt(x,36)):[],o=[];let a=0,b=0;for(let i=0;i+1<v.length;i+=2){a+=v[i];b+=v[i+1];o.push([a/1e5,b/1e5])}return o};
+const VIS={g:true,r:true};let GL={};
 let map,lay;
 function openMap(c){const s=D.S.find(x=>x.s===c);document.getElementById('sheet').classList.add('open');
  if(!map){map=L.map('map');const tl=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri',keepBuffer:4}).addTo(map);
@@ -118,14 +121,19 @@ function openMap(c){const s=D.S.find(x=>x.s===c);document.getElementById('sheet'
   lay=L.layerGroup().addTo(map);try{new ResizeObserver(()=>map.invalidateSize({pan:false})).observe(document.getElementById('map'))}catch(e){}}
  lay.clearLayers();
  s.ring.forEach(r=>L.polygon(r,{color:'#555',weight:1.5,dashArray:'5 4',fill:false}).addTo(lay));
- const L0=s.lin||[];L.polyline(L0.filter(l=>!l[0]).map(l=>l[1]),{color:'#d13b30',weight:4,opacity:.9}).addTo(lay);
- L.polyline(L0.filter(l=>l[0]).map(l=>l[1]),{color:'#1a8a4a',weight:4.5}).addTo(lay);
+ GL={r:L.layerGroup(),g:L.layerGroup()};
+ const L0=s.lin||[];L.polyline(L0.filter(l=>!l[0]).map(l=>l[1]),{color:'#d13b30',weight:4,opacity:.75}).addTo(GL.r);
+ L.polyline(L0.filter(l=>l[0]).map(l=>l[1]),{color:'#1a8a4a',weight:4.5,opacity:.75}).addTo(GL.r);
+ const T=(s.gps||[]).map(g=>[g[0],g[1],g[2],d36(g[3])]);
+ T.forEach(g=>{L.polyline(g[3],{color:'#fff',weight:6,opacity:.8}).addTo(GL.g);L.polyline(g[3],{color:'#1f3fbf',weight:3,opacity:.95}).bindTooltip(`Rastreio ${g[0]} · ${g[1]}–${g[2]}`,{sticky:true}).addTo(GL.g)});
+ if(VIS.r)GL.r.addTo(lay);if(VIS.g)GL.g.addTo(lay);
  (s.par||[]).forEach(p=>L.circleMarker([p[3],p[4]],{radius:9,color:'#fff',weight:2,fillColor:'#e08a00',fillOpacity:1}).bindTooltip(`Parada ${p[0]}–${p[1]} · ${hm(p[2])}`).addTo(lay));
  if(s.ini)L.marker(s.ini.slice(0,2),{icon:L.divIcon({className:'',html:'<div class="ini">🏁</div>',iconSize:[24,24],iconAnchor:[12,12]}),zIndexOffset:500}).bindPopup(`<b>Início da rota · ${s.ini[2]}</b><br>Primeiro ponto do veículo dentro do setor.${navIni(s)}`).addTo(lay);
  if(vivo(s))L.marker(s.pos,{icon:L.divIcon({className:'',html:'<div class="truck">🚛</div>',iconSize:[26,26],iconAnchor:[13,13]}),zIndexOffset:1000}).bindPopup(`<b>${(s.veic||[]).join(', ')||'Veículo'}</b><br>Posição das ${s.ult||'—'}${navVei(s)}`).addTo(lay);
  document.getElementById('shT').textContent='Setor '+s.s+' · '+nf(s.pct)+'%';
- document.getElementById('shF').innerHTML=`${(s.veic||[]).join(', ')} · última posição ${s.ult||'—'}<div class="leg"><span><i style="background:#1a8a4a"></i>Executado</span><span><i style="background:#d13b30"></i>Falta executar</span><span><i style="background:#e08a00;width:10px;height:10px;border-radius:50%"></i>Parada longa</span>${s.ini?'<span><i style="background:#1a8a4a;width:10px;height:10px;border-radius:50%"></i>Início da rota</span>':''}${vivo(s)?'<span><i style="background:#2a78d6;width:10px;height:10px;border-radius:50%"></i>Veículo (toque para ir até ele)</span>':''}</div>${navBtns(s)}`;
- setTimeout(()=>{map.invalidateSize();map.fitBounds(L.latLngBounds(((s.lin||[]).length?s.lin.flatMap(l=>l[1]):s.ring.flat()).concat(s.ini?[s.ini.slice(0,2)]:[],vivo(s)?[s.pos]:[])),{padding:[24,24]})},30);}
+ document.getElementById('shF').innerHTML=`${(s.veic||[]).join(', ')} · última posição ${s.ult||'—'}${T.length?`<div class="lt"><button data-l="g" class="${VIS.g?'on':''}">Rastreio do GPS</button><button data-l="r" class="${VIS.r?'on':''}">Rota programada</button></div>`:''}<div class="leg">${T.length?`<span><i style="background:#1f3fbf"></i>Rastreio GPS (${T.map(g=>g[0]+' '+g[1]+'–'+g[2]).join(', ')})</span>`:''}<span><i style="background:#1a8a4a"></i>Rota: executado</span><span><i style="background:#d13b30"></i>Rota: falta executar</span><span><i style="background:#e08a00;width:10px;height:10px;border-radius:50%"></i>Parada longa</span>${s.ini?'<span><i style="background:#1a8a4a;width:10px;height:10px;border-radius:50%"></i>Início da rota</span>':''}${vivo(s)?'<span><i style="background:#2a78d6;width:10px;height:10px;border-radius:50%"></i>Veículo (toque para ir até ele)</span>':''}</div>${navBtns(s)}`;
+ document.querySelectorAll('.lt button').forEach(b=>b.onclick=()=>{const k=b.dataset.l;VIS[k]=!VIS[k];b.classList.toggle('on',VIS[k]);VIS[k]?GL[k].addTo(lay):lay.removeLayer(GL[k])});
+ setTimeout(()=>{map.invalidateSize();const bb=L.latLngBounds(((s.lin||[]).length?s.lin.flatMap(l=>l[1]):s.ring.flat()).concat(s.ini?[s.ini.slice(0,2)]:[],vivo(s)?[s.pos]:[])),bz=bb.pad(.5);T.forEach(g=>g[3].forEach(p=>{if(bz.contains(p))bb.extend(p)}));map.fitBounds(bb,{padding:[24,24]})},30);}
 document.querySelectorAll('#vt button').forEach(b=>b.onclick=()=>{VIEW=b.dataset.v;document.querySelectorAll('#vt button').forEach(x=>x.classList.toggle('on',x===b));document.getElementById('vCol').hidden=VIEW!=='col';document.getElementById('vAte').hidden=VIEW!=='ate';if(D)render()});
 document.getElementById('back').onclick=()=>document.getElementById('sheet').classList.remove('open');
 document.querySelectorAll('.tabs button').forEach(b=>{b.classList.toggle('on',b.dataset.t===TURNO);b.onclick=()=>{TURNO=b.dataset.t;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));render()}});
