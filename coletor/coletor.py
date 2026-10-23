@@ -370,6 +370,13 @@ def montar(s, dia, cad, at):
                         continue
                     o["par"].append([(p.get("DataHoraInicio") or "")[11:16], (p.get("DataHoraFim") or "")[11:16], d, round(pt[0], 5), round(pt[1], 5)])
                     o["stop"] += d
+        # Ponto inicial da rota: 1º ponto de GPS dentro do setor a partir da entrada no setor (INLOG).
+        te = dt.datetime.fromisoformat(o["_ent"][:19]) if o.get("_ent") else None
+        cand = sorted(p for tr in trilhas.values() for p in tr if te is None or p[0] >= te)
+        noset = [p for p in cand if o["ring"] and any(dentro(p[1], r) for r in o["ring"])]
+        p = (noset or (cand if te else []) or [None])[0]
+        if p:
+            o["ini"] = [round(p[1][0], 5), round(p[1][1], 5), p[0].strftime("%H:%M")]
         sai = []
         for v, tr in trilhas.items():
             a, b, c0 = garagem(tr, gar)
