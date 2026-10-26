@@ -248,6 +248,7 @@ function proxima(s){
 // ---------- geometria
 function inRing(y, x, r){ let ins=false; for(let i=0,j=r.length-1;i<r.length;j=i++){ const yi=r[i][0],xi=r[i][1],yj=r[j][0],xj=r[j][1]; if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi)) ins=!ins; } return ins; }
 const BB = {}; C.sectors.forEach(s => { const f = s.rings.flat(); BB[s.code] = [Math.min(...f.map(p=>p[0])),Math.max(...f.map(p=>p[0])),Math.min(...f.map(p=>p[1])),Math.max(...f.map(p=>p[1]))]; });
+function setoresEm(la, lo){ return C.sectors.filter(s => { const b = BB[s.code]; return !(la<b[0]||la>b[1]||lo<b[2]||lo>b[3]) && s.rings.some(r => inRing(la, lo, r)); }); }
 function setorEm(la, lo){
   for (const s of C.sectors){ const b = BB[s.code]; if (la<b[0]||la>b[1]||lo<b[2]||lo>b[3]) continue; if (s.rings.some(r => inRing(la, lo, r))) return s; }
   return null;
@@ -335,7 +336,7 @@ function fecharRes(){ setRes(''); map.closePopup(); }
 function mostrarPonto(la, lo, titulo, fromClick){
   window.__ultimo = () => mostrarPonto(la, lo, titulo, true);
   streetL.clearLayers();
-  const s = setorEm(la, lo); sel = s ? s.code : null; style();
+  const ss = setoresEm(la, lo).sort((a, b) => (titulo === 'Setor ' + b.code) - (titulo === 'Setor ' + a.code)), s = ss[0]; sel = s ? s.code : null; style();
   marker.setLatLng([la, lo]).addTo(map);
   const head = `<h2>${titulo ? 'Endereço' : 'Local selecionado'}</h2><p class="addr">${esc(titulo || 'Ponto no mapa')}</p>`;
   if (!s){
@@ -345,7 +346,7 @@ function mostrarPonto(la, lo, titulo, fromClick){
   }
   const ru = ruaPerto(la, lo);
   setRes('');
-  abrirPop([la, lo], (titulo ? `<div class="pt">${esc(titulo)}</div>` : ru != null ? `<div class="pt">${esc(C.streets[ru][0])}</div>` : '') + popInfo(s, la, lo) + (ru != null ? ultimaHTML(ru, true) : ''));
+  abrirPop([la, lo], (titulo ? `<div class="pt">${esc(titulo)}</div>` : ru != null ? `<div class="pt">${esc(C.streets[ru][0])}</div>` : '') + ss.map(x => popInfo(x, la, lo)).join('') + (ru != null ? ultimaHTML(ru, true) : ''));
   if (!fromClick) map.setView([la, lo], Math.max(map.getZoom(), 16));
 }
 // ---------- ruas locais (offline)
@@ -421,7 +422,7 @@ q.addEventListener('blur', () => setTimeout(() => sg.style.display = 'none', 150
 q.addEventListener('keydown', e => {
   const bs = [...sg.querySelectorAll('button[data-i]')];
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){ e.preventDefault(); if (!bs.length) return; act = (act + (e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length; bs.forEach((b, k) => b.classList.toggle('on', k === act)); bs[act].scrollIntoView({ block: 'nearest' }); }
-  else if (e.key === 'Enter'){ e.preventDefault(); if (act >= 0) escolher(+bs[act].dataset.i); else if (/\d/.test(q.value)) buscarTexto(q.value.trim()); else if (bs.length) escolher(+bs[0].dataset.i); else buscarTexto(q.value.trim()); }
+  else if (e.key === 'Enter'){ e.preventDefault(); const k = SEC[q.value.trim()] ? bs.findIndex(b => b.innerText.includes('Setor ' + q.value.trim())) : -1; if (act >= 0) escolher(+bs[act].dataset.i); else if (k >= 0) escolher(+bs[k].dataset.i); else if (/\d/.test(q.value)) buscarTexto(q.value.trim()); else if (bs.length) escolher(+bs[0].dataset.i); else buscarTexto(q.value.trim()); }
   else if (e.key === 'Escape'){ sg.style.display = 'none'; }
 });
 $('#clr').onclick = () => { q.value = ''; $('#clr').style.display = 'none'; sg.style.display = 'none'; streetL.clearLayers(); map.removeLayer(marker); sel = null; style(); fecharRes(); q.focus(); };
