@@ -245,10 +245,9 @@ def montar_cidade(s, slug, hoje):
         for k in range(n + 1):
             pt = ls.interpolate(k / n, normalized=True)
             g["len"] += 1
-            for c in codes:
+            for c in codes:          # setores que se sobrepõem (dias diferentes) contam todos
                 if PP[c].contains(pt):
                     g["sec"][c] += 1
-                    break
         g["g"].append([(la, lo) for lo, la in ls.simplify(0.00003).coords])
     STREETS = []
     for (name, b), g in grp.items():
