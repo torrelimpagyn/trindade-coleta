@@ -6,7 +6,7 @@
   "cidade-ocidental": {"nome": "Cidade Ocidental", "chave": "CIDADE OCIDENTAL", "garagem": [-16.1053, -47.98848], "aterro": [-16.10771, -47.8819], "dias_busca": 60},
   "jandira": {"nome": "Jandira", "chave": "JANDIRA", "garagem": [-23.51732, -46.92466], "aterro": [-23.5209, -46.97752], "dias_busca": 60},
   "jatai": {"nome": "Jataí", "chave": "JATAI", "garagem": [-17.87704, -51.73205], "aterro": [-17.79407, -51.64897], "dias_busca": 60},
-  "luziania": {"nome": "Luziânia", "chave": "LUZIANIA", "garagem": [-16.24876, -47.90447], "aterro": null, "dias_busca": 60},
+  "luziania": {"nome": "Luziânia", "chave": "LUZIANIA", "garagem": [-16.24876, -47.90447], "aterro": [-16.28739, -48.01847], "dias_busca": 60},
   "santa-vitoria": {"nome": "Santa Vitória", "chave": "SANTA VITORIA", "garagem": [-18.85372, -50.13822], "aterro": [-18.87559, -50.15387], "dias_busca": 60},
-  "valparaiso": {"nome": "Valparaíso", "chave": "VALPARAISO", "garagem": null, "aterro": null, "dias_busca": 60}
+  "valparaiso": {"nome": "Valparaíso", "chave": "VALPARAISO", "garagem": [-16.10571, -47.98867], "aterro": [-16.10689, -47.88069], "dias_busca": 60}
 }
