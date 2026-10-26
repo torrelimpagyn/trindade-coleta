@@ -79,9 +79,9 @@ function turnos(){const T=[...new Set(D.S.map(tno))].sort((a,b)=>(TORD.indexOf(a
  if(!T.includes(TURNO)){const h=new Date().getHours(),at=T.filter(t=>D.S.some(s=>tno(s)===t&&s.sit==='ATIVO'));TURNO=(h>=18||h<4)&&T.includes('NOTURNO')?'NOTURNO':at[0]||T.find(t=>h>=14?['VESPERTINO','TARDE'].includes(t):['MATUTINO','MANHA','DIURNO'].includes(t))||T[0]||null}
  const el=document.getElementById('tabsT');el.innerHTML=T.map(t=>`<button data-t="${t}" class="${t===TURNO?'on':''}">${TLAB[t]||t}</button>`).join('');el.style.display=T.length<2?'none':'';
  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{TURNO=b.dataset.t;render()})}
-function cidades(){const sel=document.getElementById('cid');sel.innerHTML=CIDADES.map(c=>`<option value="${c.s}"${c===CX?' selected':''}>${c.n}</option>`).join('');document.getElementById('cons').hidden=!CX.c;
+function cidades(){const sel=document.getElementById('cid');sel.innerHTML=CIDADES.map(c=>`<option value="${c.s}"${c===CX?' selected':''}>${c.n}</option>`).join('');document.getElementById('cons').href='consulta.html?c='+CX.s;
  sel.onchange=()=>{CX=CIDADES.find(c=>c.s===sel.value)||CIDADES[0];try{localStorage.setItem('tc_cid',CX.s)}catch(e){}const u=new URL(location.href);u.searchParams.set('c',CX.s);history.replaceState(null,'',u);
-  document.getElementById('cons').hidden=!CX.c;D=null;DIA=null;IDX={};HOJE=null;TURNO=null;OPEN.clear();document.getElementById('cal').hidden=true;document.getElementById('list').innerHTML='<div class="note">Carregando…</div>';document.getElementById('sum').innerHTML='';carregar()}}
+  document.getElementById('cons').href='consulta.html?c='+CX.s;D=null;DIA=null;IDX={};HOJE=null;TURNO=null;OPEN.clear();document.getElementById('cal').hidden=true;document.getElementById('list').innerHTML='<div class="note">Carregando…</div>';document.getElementById('sum').innerHTML='';carregar()}}
 const nf=(v,d=0)=>Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const hm=s=>{const h=Math.floor(s/3600),m=Math.round(s%3600/60);return h?`${h}h ${String(m).padStart(2,'0')}min`:`${m} min`};
 const SIT={ATIVO:['Em execução','st-a'],AGUARDANDO:['Aguardando','st-w'],EXECUTADO:['Finalizado','st-e'],GPS:['Realizado (só GPS)','st-g']};
