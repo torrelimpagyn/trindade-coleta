@@ -385,9 +385,13 @@ def minutos(t):
     return int((t - EPOCA).total_seconds() // 60)
 
 
-def indice_ruas():
-    arq = os.path.join(AQUI, "..", "docs", "consulta_dados.json")
-    ruas = json.load(open(arq))["streets"]
+def arq_consulta():
+    return os.path.join(AQUI, "..", "docs", CID.get("raiz", "c/%s/" % CID.get("slug")) if CID else "", "consulta_dados.json")
+
+
+def indice_ruas(ruas=None):
+    if ruas is None:
+        ruas = json.load(open(arq_consulta()))["streets"]
     cel = {}
     for idx, r in enumerate(ruas):
         for parte in (r[3] or "").split(";"):
@@ -441,6 +445,9 @@ def historico_ruas(s, dia, gps_hoje):
     ant = estado_anterior()
     if isinstance(ant, list) and len(ant) == n:
         ult = ant
+    elif not CID.get("ruas"):   # cidades novas: parte da última passagem calculada junto com a consulta
+        ult0 = json.load(open(arq_consulta())).get("ult0")
+        ult = list(ult0) if isinstance(ult0, list) and len(ult0) == n else [0] * n
     else:   # primeira vez: busca os últimos 7 dias na INLOG
         ult = [0] * n
         for k in range(7, 0, -1):
@@ -748,7 +755,7 @@ def hoje_cidade(s, dia, agora):
     dados, gps_dia = montar(s, dia, cad, agora.strftime("%H:%M"))
     idx = indice_hist()
     guardar_dia(dados, "parcial", idx)
-    if CID.get("ruas"):
+    if CID.get("ruas") or os.path.exists(arq_consulta()):
         try:
             dados["ruas"] = historico_ruas(s, dia, gps_dia)
         except SystemExit:
