@@ -39,7 +39,7 @@ ACESSO_ATERRO = [  # via de acesso ao aterro (OpenStreetMap): Av. dos Angicos + 
 RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
 JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
-VERSAO_HIST = 5         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+VERSAO_HIST = 6         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
 
 
 def falha(msg):
@@ -174,7 +174,7 @@ def cobertura(lin, trv, raio=25, vel_max=25):
     return round(100 * ok / tot, 1) if tot else None
 
 
-def gps_sem_controle(s, dia, o, min_cob=15):
+def gps_sem_controle(s, dia, o, ocupado=None, min_cob=15, min_pts=40):
     """Setor sem controle na INLOG (aparece como AGUARDANDO 0%): procura no GPS os veículos que coletaram nele
     (passagens perto do setor, devagar, dentro do polígono). Se achar, o setor vira "realizado pelo GPS"."""
     pts_area = [tuple(p) for r in o["ring"] for p in r] + [tuple(q) for _, l in o["lin"] for q in l]
@@ -188,13 +188,15 @@ def gps_sem_controle(s, dia, o, min_cob=15):
         for h in blk.get("Historico") or []:
             v = h.get("Identificador") or blk.get("IdentificadorVeiculo") or "?"
             t = dt.datetime.fromisoformat(h["DataHora"][:19])
+            if ocupado and (v, t.replace(second=0)) in ocupado:
+                continue   # nesse minuto o caminhão já estava num controle de outro setor da INLOG
             por_v.setdefault(v, {})[t] = ((h["Latitude"] / 1e6, h["Longitude"] / 1e6), h.get("Velocidade") or 0)
     no_setor = lambda q: any(dentro(q, r) for r in o["ring"]) if o["ring"] else True
     escolhidos = {}
     for v, d in por_v.items():
         tr = [(t, q, vel) for t, (q, vel) in sorted(d.items())]
         dentro_lento = [x for x in tr if x[2] <= 25 and no_setor(x[1])]
-        if len(dentro_lento) < 20:
+        if len(dentro_lento) < min_pts:
             continue
         cob = cobertura(o["lin"], {v: tr})
         print("   ", o["s"], "sem controle na INLOG · GPS de", v, ":", cob, "% da rota,", len(dentro_lento), "pontos coletando no setor")
@@ -212,7 +214,7 @@ def gps_sem_controle(s, dia, o, min_cob=15):
     for v, (tr, dl) in escolhidos.items():
         a, b = dl[0][0], dl[-1][0]
         seg = [x for x in tr if a <= x[0] <= b]
-        km += sum(dist_m(p[1], q[1]) for p, q in zip(seg, seg[1:]) if (q[0] - p[0]).total_seconds() <= 180) / 1000
+        km += sum(dist_m(p[1], q[1]) for p, q in zip(seg, seg[1:]) if (q[0] - p[0]).total_seconds() <= 180 and no_setor(p[1]) and no_setor(q[1])) / 1000
         t_ini = a if t_ini is None or a < t_ini else t_ini
         t_fim = b if t_fim is None or b > t_fim else t_fim
         if ult is None or tr[-1][0] > ult[0]:
@@ -465,7 +467,7 @@ def montar(s, dia, cad, at):
                 emprestado[(y.get("Setor") or "").split(" - ")[0]] = y
     except SystemExit:
         pass
-    setores, gps_dia, por_veic = [], [], {}
+    setores, gps_dia, por_veic, pend = [], [], {}, []
     for x in linhas:
         cod = (x.get("Setor") or "").split(" - ")[0].strip()
         dia_x = dia
@@ -550,15 +552,20 @@ def montar(s, dia, cad, at):
             except Exception as e:   # sem rota programada: o card continua funcionando
                 print("  rota", cod, "indisponível:", e)
             if not x.get("Controle") and not o["pct"] and o["lin"]:
-                try:   # a INLOG não registrou o setor: confere no GPS se algum caminhão coletou nele
-                    gps_sem_controle(s, dia_x, o)
-                except SystemExit:
-                    print("  passagens", cod, "indisponíveis")
-                except Exception as e:
-                    print("  passagens", cod, "falharam:", e)
+                pend.append((o, dia_x))   # a INLOG não registrou o setor: confere no GPS depois de ler todos os controles
         o.pop("_ent", None)
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%", "gps:", o.get("pgps"), "%")
+    ocupado = {(v, t.replace(second=0)) for v, d in por_veic.items() for t in d}
+    for o, dia_o in pend:
+        try:
+            gps_sem_controle(s, dia_o, o, ocupado)
+            if o["sit"] == "GPS":
+                print(o["s"], "GPS", o["veic"], o["entrada"], "-", o.get("fim_gps"), o["dist"], "km", "gps:", o["pgps"], "%")
+        except SystemExit:
+            print("  passagens", o["s"], "indisponíveis")
+        except Exception as e:
+            print("  passagens", o["s"], "falharam:", e)
     return {"dia": dia, "at": at, "garagem": cad["garagem"], "S": setores, "aterro": aterro(por_veic, tuple(cad["aterro"]))}, gps_dia
 
 
