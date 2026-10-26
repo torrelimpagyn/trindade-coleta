@@ -40,7 +40,7 @@ header h1{font-size:17px;margin:0}
 .kv:last-of-type{border-bottom:0}
 .par{display:flex;gap:8px;align-items:center;padding:6px 0 6px 10px;font-size:12.5px;color:var(--ink);text-decoration:none;border-left:3px solid #e08a00;margin:4px 0}.par span{color:var(--mut)}.par b{margin-left:auto}.par i{font-style:normal;color:var(--g);font-weight:600}
 .btn{display:block;width:100%;margin-top:10px;border:1px solid var(--g);color:var(--g);background:var(--card);border-radius:10px;padding:9px;font:inherit;font-weight:700}
-.st-w{color:var(--mut)}.st-a{color:var(--g)}.st-e{color:var(--amb)}.st-r{color:var(--red)}
+.st-g{color:#2a5bd7}.st-w{color:var(--mut)}.st-a{color:var(--g)}.st-e{color:var(--amb)}.st-r{color:var(--red)}
 #sheet{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;flex-direction:column}#sheet.open{display:flex}
 #sheet .hd{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;background:var(--card);border-bottom:1px solid var(--line)}
 #sheet .hd button{border:0;background:var(--soft);border-radius:10px;padding:8px 12px;font:inherit;font-weight:600;color:var(--ink)}#sheet .hd h2{font-size:16px;margin:0}
@@ -63,7 +63,7 @@ header h1{font-size:17px;margin:0}
  <div id="vCol"><div class="tabs"><button data-t="MATUTINO" class="on">Manhã</button><button data-t="VESPERTINO">Tarde</button></div>
  <div class="sum" id="sum"></div><div id="list"></div></div>
  <div id="vAte" hidden><div class="sum" id="aSum" style="grid-template-columns:repeat(2,1fr)"></div><div id="aList"></div></div>
- <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Use o calendário para ver dias anteriores (guardados por mais de um ano). Saída/retorno à garagem calculados pelo GPS do veículo (raio de 300 m da garagem). Aterro: entrada e saída pelo GPS, num raio de 400 m do aterro; velocidade máxima = maior velocidade registrada pelo GPS lá dentro. Via de acesso = Av. dos Angicos e a estrada a oeste das lagoas até o aterro (até 40 min antes da entrada e depois da saída). Percentual executado = percentual da própria INLOG. "Pelo GPS" = parte da rota programada por onde o GPS do caminhão passou devagar (até 25 km/h, a até 25 m da rua); mostra o andamento sem esperar a INLOG atualizar, mas é uma medição nossa, não o número oficial. "Ir até o veículo" abre o GPS do celular até a última posição enviada pelo veículo (só para setores em execução); "Ir ao ponto inicial" leva ao primeiro ponto de GPS do veículo dentro do setor depois da entrada. No mapa aparecem o rastreio do GPS do veículo (azul, o mesmo caminho que a INLOG mostra) e a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar. Os botões acima do mapa ligam e desligam cada um.</div>
+ <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Use o calendário para ver dias anteriores (guardados por mais de um ano). Saída/retorno à garagem calculados pelo GPS do veículo (raio de 300 m da garagem). Aterro: entrada e saída pelo GPS, num raio de 400 m do aterro; velocidade máxima = maior velocidade registrada pelo GPS lá dentro. Via de acesso = Av. dos Angicos e a estrada a oeste das lagoas até o aterro (até 40 min antes da entrada e depois da saída). Percentual executado = percentual da própria INLOG. "Realizado (só GPS)" = setor que a INLOG deixou em 0% (sem controle aberto), mas em que o rastreador mostra um caminhão coletando (devagar, dentro do polígono e cobrindo pelo menos 15% da rota programada). "Pelo GPS" = parte da rota programada por onde o GPS do caminhão passou devagar (até 25 km/h, a até 25 m da rua); mostra o andamento sem esperar a INLOG atualizar, mas é uma medição nossa, não o número oficial. "Ir até o veículo" abre o GPS do celular até a última posição enviada pelo veículo (só para setores em execução); "Ir ao ponto inicial" leva ao primeiro ponto de GPS do veículo dentro do setor depois da entrada. No mapa aparecem o rastreio do GPS do veículo (azul, o mesmo caminho que a INLOG mostra) e a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar. Os botões acima do mapa ligam e desligam cada um.</div>
 </div>
 <div id="sheet"><div class="hd"><button id="back">‹ Voltar</button><h2 id="shT"></h2></div><div id="map"></div><div class="ft" id="shF"></div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -71,7 +71,7 @@ header h1{font-size:17px;margin:0}
 let D=null,DIA=null,IDX={},VIEW='col';let TURNO=(new Date().getHours()>=14)?'VESPERTINO':'MATUTINO',OPEN=new Set();
 const nf=(v,d=0)=>Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const hm=s=>{const h=Math.floor(s/3600),m=Math.round(s%3600/60);return h?`${h}h ${String(m).padStart(2,'0')}min`:`${m} min`};
-const SIT={ATIVO:['Em execução','st-a'],AGUARDANDO:['Aguardando','st-w'],EXECUTADO:['Finalizado','st-e']};
+const SIT={ATIVO:['Em execução','st-a'],AGUARDANDO:['Aguardando','st-w'],EXECUTADO:['Finalizado','st-e'],GPS:['Realizado (só GPS)','st-g']};
 function render(){if(VIEW==='ate'){renderAte();return}renderCol()}
 function renderAte(){const [y,mo,da]=D.dia.split('-'),hj=!DIA;cabecalho(y,mo,da,hj);
  const A=D.aterro;document.getElementById('aSum').innerHTML='';
@@ -88,20 +88,21 @@ function renderCol(){
  document.getElementById('sub').textContent=hj?`${da}/${mo}/${y} · atualizado às ${D.at}`:`${WD[new Date(+y,mo-1,+da).getDay()]}, ${da}/${mo}/${y} · ${D.at==='final'?'dia encerrado':'parcial até '+D.at}`;
  const pa=document.getElementById('past');pa.hidden=hj;pa.textContent=hj?'':'Você está vendo um dia anterior. Escolha "Hoje" para voltar ao acompanhamento ao vivo.';
  const S=D.S.filter(s=>s.turno===TURNO);
- const inc=S.filter(s=>s.sit==='EXECUTADO'&&s.pct<90).length,at=S.filter(s=>s.sit==='ATIVO').length,ag=S.filter(s=>s.sit==='AGUARDANDO').length,av=S.reduce((a,s)=>a+s.pct,0)/S.length,gv=S.some(s=>s.pgps!=null)?S.reduce((a,s)=>a+(s.pgps??s.pct),0)/S.length:null;
- document.getElementById('sum').innerHTML=`<div><b>${nf(av)}%</b><small>média executada${gv!=null?` (INLOG)</small><small style="display:block;color:#2a5bd7;font-weight:700">GPS ${nf(gv)}%`:''}</small></div><div><b>${at}</b><small>em execução</small></div><div><b>${ag}</b><small>${hj?'aguardando saída':'não saíram'}</small></div>${inc?`<div style="grid-column:1/-1;border-color:var(--red);background:var(--redbg)"><b style="font-size:15px;color:var(--red)">${inc} setor${inc>1?'es':''} encerrado${inc>1?'s':''} sem concluir</b><small>A INLOG fechou o setor com menos de 90% executado</small></div>`:''}`;
+ const inc=S.filter(s=>s.sit==='EXECUTADO'&&s.pct<90).length,at=S.filter(s=>s.sit==='ATIVO').length,ag=S.filter(s=>s.sit==='AGUARDANDO').length,av=S.reduce((a,s)=>a+s.pct,0)/S.length,ng=S.filter(s=>s.sit==='GPS').length,gv=S.some(s=>s.pgps!=null)?S.reduce((a,s)=>a+(s.pgps??s.pct),0)/S.length:null;
+ document.getElementById('sum').innerHTML=`<div><b>${nf(av)}%</b><small>média executada${gv!=null?` (INLOG)</small><small style="display:block;color:#2a5bd7;font-weight:700">GPS ${nf(gv)}%`:''}</small></div><div><b>${at}</b><small>em execução</small></div><div><b>${ag}</b><small>${hj?'aguardando saída':'não saíram'}</small></div>${ng?`<div style="grid-column:1/-1;border-color:#2a5bd7;background:rgba(42,91,215,.1)"><b style="font-size:15px;color:#2a5bd7">${ng} setor${ng>1?'es':''} realizado${ng>1?'s':''} só pelo GPS</b><small>A INLOG não registrou, mas o rastreador mostra o caminhão coletando no setor</small></div>`:''}${inc?`<div style="grid-column:1/-1;border-color:var(--red);background:var(--redbg)"><b style="font-size:15px;color:var(--red)">${inc} setor${inc>1?'es':''} encerrado${inc>1?'s':''} sem concluir</b><small>A INLOG fechou o setor com menos de 90% executado</small></div>`:''}`;
  document.getElementById('list').innerHTML=S.map(s=>{const inc=s.sit==='EXECUTADO'&&s.pct<90;const st=inc?['Encerrado sem concluir','st-r']:(SIT[s.sit]||[s.sit,'st-w']);return `<div class="sec ${OPEN.has(s.s)?'open':''}" data-c="${s.s}">
-  <div class="sh"><span class="tag">RSU</span><span class="nm">${s.s}<span class="sit ${st[1]}">${st[0]}</span></span><span class="pc"${inc?' style="color:var(--red)"':''}>${nf(s.pct)}%<small>INLOG</small></span><span class="ch">▼</span></div>
-  <div class="bar"><span style="width:${s.pct}%${inc?';background:var(--red)':''}"></span></div>
-  ${s.pgps!=null?`<div class="gb"><small>Pelo GPS</small><div class="bar"><span style="width:${Math.min(100,s.pgps)}%"></span></div><b>${nf(s.pgps)}%</b></div>`:''}
+  <div class="sh"><span class="tag">RSU</span><span class="nm">${s.s}<span class="sit ${st[1]}">${st[0]}</span></span><span class="pc"${inc?' style="color:var(--red)"':s.sit==='GPS'?' style="color:#2a5bd7"':''}>${s.sit==='GPS'?nf(s.pgps)+'%<small>GPS</small>':nf(s.pct)+'%<small>INLOG</small>'}</span><span class="ch">▼</span></div>
+  ${s.sit==='GPS'?'':`<div class="bar"><span style="width:${s.pct}%${inc?';background:var(--red)':''}"></span></div>`}
+  ${s.pgps!=null?`<div class="gb"${s.sit==='GPS'?' style="margin-top:2px"':''}><small>${s.sit==='GPS'?'GPS · INLOG 0%':'Pelo GPS'}</small><div class="bar"><span style="width:${Math.min(100,s.pgps)}%"></span></div><b>${nf(s.pgps)}%</b></div>`:''}
   <div class="det"><span class="pill">${s.s}</span>
    <div class="kv"><span>Saída da garagem</span><b>${s.saida||(s.rast0?'GPS desde '+s.rast0:'—')}</b></div>
+   ${s.sit==='GPS'?`<div class="kv"><span>Registro na INLOG</span><b style="color:var(--amb)">não registrado (0%)</b></div><div class="kv"><span>Coleta vista no GPS</span><b>${s.entrada||'—'} às ${s.fim_gps||'—'}</b></div>`:''}
    <div class="kv"><span>Entrada no setor</span><b>${s.entrada||'—'}</b></div>
    ${s.volta?`<div class="kv"><span>Retorno à garagem</span><b>${s.volta}</b></div>`:''}
    ${(s.veic.length?s.veic:['—']).map((v,i)=>`<div class="kv"><span>Veículo ${i+1}</span><b>${v}</b></div>`).join('')}
    <div class="kv"><span>Distância percorrida</span><b>${s.dist?nf(s.dist,1)+' km':'—'}</b></div>
    <div class="kv"><span>Velocidade média</span><b>${s.vel?nf(s.vel,1)+' km/h':'—'}</b></div>
-   <div class="kv"><span>Paradas longas no setor (5 min ou mais)</span><b>${(s.par||[]).length?(s.par.length+' · '+hm(s.stop)):'nenhuma'}</b></div>
+   <div class="kv"><span>Paradas longas no setor (5 min ou mais)</span><b>${s.sit==='GPS'?'—':(s.par||[]).length?(s.par.length+' · '+hm(s.stop)):'nenhuma'}</b></div>
    ${(s.par||[]).map(p=>`<a class="par" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p[3]},${p[4]}"><span>${p[0]} às ${p[1]}</span><b>${hm(p[2])}</b><i>ver local ›</i></a>`).join('')}
    <div class="kv"><span>Última posição</span><b>${s.ult||'—'}</b></div>
    ${s.ini?`<div class="kv"><span>Início da rota (1º ponto no setor)</span><b>${s.ini[2]}</b></div>`:''}
