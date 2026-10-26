@@ -1,0 +1,68 @@
+name: Consulta de endereços
+
+# Monta a consulta de endereços das cidades (setores, dias e horário em cada rua)
+# a partir dos mapas dos setores e do GPS da INLOG e das ruas do OpenStreetMap.
+# Roda no dia 1 de cada mês, quando o script ou o cadastro das cidades mudam,
+# e pelo botão "Run workflow" (dá para escolher as cidades).
+on:
+  schedule:
+    - cron: "23 9 1 * *"   # dia 1, 06h23 (Brasília)
+  push:
+    branches: [main]
+    paths: ["coletor/consulta.py", "coletor/cidades.json"]
+  workflow_dispatch:
+    inputs:
+      cidades:
+        description: "Cidades separadas por espaço (ex.: anapolis jatai). Vazio = todas."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: consulta
+  cancel-in-progress: false
+
+jobs:
+  montar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    environment:
+      name: github-pages
+    env:
+      INLOG_USUARIO: ${{ secrets.INLOG_USUARIO }}
+      INLOG_SENHA: ${{ secrets.INLOG_SENHA }}
+      CIDADES: ${{ github.event.inputs.cidades }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests==2.32.3 cryptography==43.0.3 shapely==2.0.6
+      - name: Montar a consulta das cidades
+        run: python coletor/consulta.py $CIDADES
+      - name: Salvar no repositório
+        id: salvar
+        run: |
+          git add docs/c/*/consulta_dados.json
+          if git diff --cached --quiet; then echo "nada mudou"; exit 0; fi
+          git -c user.name=coletor -c user.email=coletor@users.noreply.github.com commit -qm "Consulta: dados das cidades ($(TZ=America/Sao_Paulo date +%d/%m))"
+          for i in 1 2 3 4 5; do
+            if git pull -q --rebase origin main && git push -q origin HEAD:main; then echo "mudou=1" >> "$GITHUB_OUTPUT"; break; fi
+            sleep 15
+          done
+      # publica o site já com a consulta nova (a coleta também publica ao reiniciar)
+      - uses: actions/configure-pages@v5
+        if: steps.salvar.outputs.mudou == '1'
+        continue-on-error: true
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.salvar.outputs.mudou == '1'
+        continue-on-error: true
+        with:
+          path: docs
+      - uses: actions/deploy-pages@v4
+        if: steps.salvar.outputs.mudou == '1'
+        continue-on-error: true
