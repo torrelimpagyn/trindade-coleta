@@ -1,10 +1,11 @@
-"""Coleta os dados do dia de Trindade na INLOG e gera docs/dados.enc.json (criptografado).
+"""Coleta os dados do dia das cidades na INLOG e gera docs/dados.enc.json (Trindade) e docs/c/<cidade>/dados.enc.json (criptografados).
 
 Variáveis de ambiente (cadastradas em Settings > Secrets and variables > Actions):
   INLOG_USUARIO, INLOG_SENHA  -> login da INLOG
   SENHA_SITE                  -> senha que as pessoas digitam para abrir o site
 """
-import base64, datetime as dt, gzip, json, math, os, re, sys
+import base64, datetime as dt, gzip, json, math, os, re, sys, time, unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from zoneinfo import ZoneInfo
 
 import requests
@@ -42,6 +43,83 @@ SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão 
 VERSAO_HIST = 7         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
 
 
+ORCAMENTO = 200        # segundos por execução (o laço roda a cada 5 min); o histórico antigo só usa o que sobrar
+RAIO_ACESSO_GERAL = 2500   # sem via de acesso desenhada: considera o GPS até 2,5 km do aterro como acesso
+CIDADES = json.load(open(os.path.join(AQUI, "cidades.json"), encoding="utf-8"))
+CACHE = os.path.join(AQUI, "cache")
+_RESP, _T0, CID = {}, time.time(), {}
+
+
+def norm(txt):
+    return unicodedata.normalize("NFKD", txt or "").encode("ascii", "ignore").decode().upper().strip()
+
+
+EXCLUI = ("DESCARTE", "SERVICO", "INEXISTENTE", "ESPECIA")
+
+
+def da_cidade(macro):
+    m = norm(macro)
+    return m.split(" - ")[0].strip() == CID["chave"] and not any(k in m for k in EXCLUI)
+
+
+def codigo(setor):
+    m = re.match(r"\s*(\d{3,})", setor or "")
+    return m.group(1) if m else (setor or "").split(" - ")[0].strip()
+
+
+def usar_cidade(slug):
+    """Aponta os caminhos e parâmetros globais para a cidade."""
+    global CID, FILTRO, SAIDA, HIST, RAW_HIST, RAW_DADOS
+    CID = dict(CIDADES[slug], slug=slug)
+    FILTRO = CID["chave"]
+    raiz = CID.get("raiz", "c/%s/" % slug)
+    SAIDA = os.path.join(AQUI, "..", "docs", raiz, "dados.enc.json")
+    HIST = os.path.join(AQUI, "..", "docs", raiz, "hist")
+    RAW_HIST = "https://raw.githubusercontent.com/{repo}/dados/" + raiz + "hist/index.json"
+    RAW_DADOS = "https://raw.githubusercontent.com/{repo}/dados/" + raiz + "dados.enc.json"
+
+
+def buscar_varios(s, urls, n=8):
+    """Baixa várias respostas da INLOG em paralelo e guarda para pegar_json."""
+    urls = [u for u in dict.fromkeys(urls) if u not in _RESP]
+    def um(u):
+        try:
+            r = s.get(u, timeout=90, headers={"X-Requested-With": "XMLHttpRequest", "Accept": "application/json"})
+            return u, r.json()
+        except Exception:
+            return u, None
+    with ThreadPoolExecutor(n) as ex:
+        for u, j in ex.map(um, urls):
+            if j is not None:
+                _RESP[u] = j
+
+
+def limpar_respostas():
+    for u in [u for u in _RESP if "CarregarGridPorData" not in u]:
+        _RESP.pop(u)
+
+
+def aneis_cidade(s, linhas, dia):
+    """Polígonos dos setores: Trindade vem do arquivo; as outras cidades da INLOG (guardados em cache)."""
+    if CID.get("cad"):
+        return {}
+    arq = os.path.join(CACHE, "aneis_%s.json" % CID["slug"])
+    try:
+        cache = json.load(open(arq))
+    except Exception:
+        cache = {}
+    falta = {str(x["CodigoSetor"]) for x in linhas if x.get("CodigoSetor") and str(x["CodigoSetor"]) not in cache}
+    if falta:
+        buscar_varios(s, [DETALHE.format(c=c, d=dia) for c in falta])
+        for c in falta:
+            j = _RESP.get(DETALHE.format(c=c, d=dia)) or {}
+            areas = (j.get("Setor") or {}).get("Areas") or []
+            cache[c] = [[[round(q["Latitude"] / 1e6, 5), round(q["Longitude"] / 1e6, 5)] for q in a.get("Coordenadas") or []] for a in areas]
+        os.makedirs(CACHE, exist_ok=True)
+        json.dump(cache, open(arq, "w"))
+    return cache
+
+
 def falha(msg):
     print("ERRO:", msg)
     sys.exit(1)
@@ -67,9 +145,14 @@ def entrar():
 
 
 def pegar_json(s, url):
+    if url in _RESP:
+        return _RESP[url]
     r = s.get(url, timeout=90, headers={"X-Requested-With": "XMLHttpRequest", "Accept": "application/json"})
     try:
-        return r.json()
+        j = r.json()
+        if "CarregarGridPorData" in url:   # a grade do dia traz todas as cidades: baixa uma vez só
+            _RESP[url] = j
+        return j
     except ValueError:
         falha("resposta inesperada da INLOG em %s (status %s): %s" % (url.split("?")[0], r.status_code, r.text[:150].replace("\n", " ")))
 
@@ -174,15 +257,27 @@ def cobertura(lin, trv, raio=25, vel_max=25):
     return round(100 * ok / tot, 1) if tot else None
 
 
+def url_passagens(o, dia):
+    pts_area = [tuple(q) for _, l in o["lin"] for q in l]
+    if not pts_area:
+        return None
+    c = (sum(p[0] for p in pts_area) / len(pts_area), sum(p[1] for p in pts_area) / len(pts_area))
+    raio = min(4000, int(max(dist_m(c, p) for p in pts_area)) + 100)
+    return PASSAGENS.format(la=round(c[0], 6), lo=round(c[1], 6), r=raio, d=dia)
+
+
+INICIO_TURNO = {"MATUTINO": 7, "MANHA": 7, "DIURNO": 8, "INTEGRAL": 8, "VESPERTINO": 14, "TARDE": 14, "NOTURNO": 20}
+CAMPOS_GPS = ("sit", "fonte", "veic", "pgps", "entrada", "ini", "gps", "dist", "vel", "fim_gps", "pos", "ult")
+GPSX = {}
+
+
 def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120):
     """Setor sem controle na INLOG (aparece como AGUARDANDO 0%): procura no GPS os veículos que coletaram nele
     (passagens perto do setor, devagar, dentro do polígono). Se achar, o setor vira "realizado pelo GPS"."""
-    pts_area = [tuple(q) for _, l in o["lin"] for q in l]   # centro e raio pela rota (o polígono pode ter partes longe)
-    if not pts_area:
+    u = url_passagens(o, dia)   # centro e raio pela rota (o polígono pode ter partes longe)
+    if not u:
         return
-    c = (sum(p[0] for p in pts_area) / len(pts_area), sum(p[1] for p in pts_area) / len(pts_area))
-    raio = min(4000, int(max(dist_m(c, p) for p in pts_area)) + 100)
-    resp = pegar_json(s, PASSAGENS.format(la=round(c[0], 6), lo=round(c[1], 6), r=raio, d=dia)) or []
+    resp = pegar_json(s, u) or []
     por_v = {}
     for blk in resp:
         for h in blk.get("Historico") or []:
@@ -333,7 +428,7 @@ def estado_anterior():
 def gps_do_dia(s, dia):
     pts = []
     g = pegar_json(s, GRID.format(d=dia))
-    cods = {y["CodigoSetor"] for y in g["Data"]["Data"] if FILTRO in (y.get("MacroSetor") or "") and y.get("Controle") and y.get("CodigoSetor")}
+    cods = {y["CodigoSetor"] for y in g["Data"]["Data"] if da_cidade(y.get("MacroSetor")) and y.get("Controle") and y.get("CodigoSetor")}
     for cod in cods:
         for c in pegar_json(s, ROTA.format(c=cod, d=dia)) or []:
             for h in c.get("RastreamentoHistorico") or []:
@@ -399,8 +494,10 @@ def dist_linha(p, linha):
     return melhor
 
 
-def na_via(pos):
-    return any(dist_linha(pos, l) <= RAIO_ACESSO for l in ACESSO_ATERRO)
+def na_via(pos, ater=None):
+    if CID.get("acesso") == "trindade":
+        return any(dist_linha(pos, l) <= RAIO_ACESSO for l in ACESSO_ATERRO)
+    return ater is not None and dist_m(pos, ater) <= RAIO_ACESSO_GERAL
 
 
 def aterro(por_veic, ater):
@@ -428,9 +525,9 @@ def aterro(por_veic, ater):
             continue
         pts = por_veic[a["v"]]
         ida = [pts[t][1] for t in pts if a["ini"] - dt.timedelta(seconds=JANELA_ACESSO) <= t < a["ini"]
-               and dist_m(pts[t][0], ater) > RAIO_ATERRO and na_via(pts[t][0])]
+               and dist_m(pts[t][0], ater) > RAIO_ATERRO and na_via(pts[t][0], ater)]
         volta = [pts[t][1] for t in pts if a["fim"] < t <= a["fim"] + dt.timedelta(seconds=JANELA_ACESSO)
-                 and dist_m(pts[t][0], ater) > RAIO_ATERRO and na_via(pts[t][0])]
+                 and dist_m(pts[t][0], ater) > RAIO_ATERRO and na_via(pts[t][0], ater)]
         out.append({"v": a["v"], "s": sorted(a["set"]), "ini": a["ini"].strftime("%Y-%m-%d %H:%M"), "fim": a["fim"].strftime("%Y-%m-%d %H:%M"),
                     "dur": dur, "vmax": round(a["vmax"]), "vida": round(max(ida)) if ida else None, "vvolta": round(max(volta)) if volta else None})
         print("    aterro", a["v"], out[-1]["ini"], "→", out[-1]["fim"][11:], dur // 60, "min · vmax", out[-1]["vmax"], "km/h",
@@ -441,15 +538,15 @@ def aterro(por_veic, ater):
 # ---------------------------------------------------------------- principal
 def montar(s, dia, cad, at):
     """Monta o quadro de um dia (hoje ou um dia anterior)."""
-    gar = tuple(cad["garagem"])
+    gar = tuple(cad["garagem"]) if cad.get("garagem") else None
     grid = pegar_json(s, GRID.format(d=dia))
-    linhas = [x for x in grid["Data"]["Data"] if FILTRO in (x.get("MacroSetor") or "")]
+    linhas = [x for x in grid["Data"]["Data"] if da_cidade(x.get("MacroSetor"))]
     # A INLOG repete o mesmo setor em várias linhas (uma por viagem/veículo, ou uma "ATIVO" e outra "AGUARDANDO").
     # Fica uma linha por setor: a que tem coleta ativa; senão a executada; senão a aguardando.
     prio = {"ATIVO": 0, "EXECUTADO": 1, "AGUARDANDO": 2}
     melhor, veics = {}, {}
     for x in linhas:
-        cod = (x.get("Setor") or "").split(" - ")[0].strip()
+        cod = codigo(x.get("Setor"))
         if x.get("Veiculo"):
             veics.setdefault(cod, [])
             if x["Veiculo"] not in veics[cod]:
@@ -465,21 +562,31 @@ def montar(s, dia, cad, at):
     emprestado = {}
     try:
         for y in pegar_json(s, GRID.format(d=ontem))["Data"]["Data"]:
-            if FILTRO in (y.get("MacroSetor") or "") and (y.get("DisplayDataInicioAtividade") or "").startswith(ddmm):
-                emprestado[(y.get("Setor") or "").split(" - ")[0]] = y
+            if da_cidade(y.get("MacroSetor")) and (y.get("DisplayDataInicioAtividade") or "").startswith(ddmm):
+                emprestado[codigo(y.get("Setor"))] = y
     except SystemExit:
         pass
     setores, gps_dia, por_veic, pend = [], [], {}, []
+    aneis = aneis_cidade(s, linhas, dia)
+    urls = []
+    for x in linhas:   # baixa tudo de uma vez, em paralelo
+        y = emprestado.get(codigo(x.get("Setor"))) if (x.get("Situacao") or "").strip() == "AGUARDANDO" and not x.get("PorcentagemRound") else None
+        z, dz = (y, ontem) if y else (x, dia)
+        if z.get("CodigoSetor"):
+            urls.append(PLANO.format(c=z["CodigoSetor"], d=dz))
+            if z.get("Controle"):
+                urls += [ROTA.format(c=z["CodigoSetor"], d=dz), DETALHE.format(c=z["CodigoSetor"], d=dz)]
+    buscar_varios(s, urls)
     for x in linhas:
-        cod = (x.get("Setor") or "").split(" - ")[0].strip()
+        cod = codigo(x.get("Setor"))
         dia_x = dia
         if (x.get("Situacao") or "").strip() == "AGUARDANDO" and not x.get("PorcentagemRound") and cod in emprestado:
             x = dict(emprestado[cod], Turno=x.get("Turno")); dia_x = ontem
-        info = cad["setores"].get(cod, {})
+        info = cad["setores"].get(cod, {}) if cad.get("setores") else {}
         o = {"s": cod, "turno": x.get("Turno"), "sit": (x.get("Situacao") or "").strip(), "pct": x.get("PorcentagemRound") or 0,
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
              "veic": list(veics.get(cod) or ([x["Veiculo"]] if x.get("Veiculo") else [])), "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
-             "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])]}
+             "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])] if info else [r for r in aneis.get(str(x.get("CodigoSetor")), []) if len(r) > 2]}
         pontos, t0, t1, trilhas, km_pt, trv = [], None, None, {}, {}, {}
         if x.get("Controle") and x.get("CodigoSetor"):
             for c in pegar_json(s, ROTA.format(c=x["CodigoSetor"], d=dia_x)) or []:
@@ -527,7 +634,7 @@ def montar(s, dia, cad, at):
             if len(u) > 1:
                 o["gps"].append([v, u[0][0].strftime("%H:%M"), u[-1][0].strftime("%H:%M"), enc(simplificar([q for _, q in u]))])
         sai = []
-        for v, tr in trilhas.items():
+        for v, tr in (trilhas.items() if gar else []):
             a, b, c0 = garagem(tr, gar)
             if a or c0:
                 sai.append((a, b, c0, v))
@@ -559,16 +666,34 @@ def montar(s, dia, cad, at):
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%", "gps:", o.get("pgps"), "%")
     ocupado = {(v, t.replace(second=0)) for v, d in por_veic.items() for t in d}
+    hoje, fila = at != "final", []
     for o, dia_o in pend:
+        u = url_passagens(o, dia_o)
+        k = "%s|%s|%s" % (CID["slug"], dia_o, o["s"])
+        if not u:
+            continue
+        h = int(at[:2]) if hoje and at[:2].isdigit() else 99
+        if hoje and h < INICIO_TURNO.get(norm(o.get("turno")), 8) and not (norm(o.get("turno")) == "NOTURNO" and h < 4):
+            continue   # turno desse setor ainda não começou
+        if hoje and k in GPSX and time.time() - GPSX[k]["t"] < 1800:   # hoje: confere cada setor no máximo a cada 30 min
+            o.update(GPSX[k]["o"])
+            continue
+        fila.append((o, dia_o, u, k))
+    buscar_varios(s, [f[2] for f in fila], n=4)
+    for o, dia_o, u, k in fila:
         try:
             gps_sem_controle(s, dia_o, o, ocupado)
+            if hoje:
+                GPSX[k] = {"t": time.time(), "o": {c: o[c] for c in CAMPOS_GPS if c in o} if o["sit"] == "GPS" else {}}
             if o["sit"] == "GPS":
                 print(o["s"], "GPS", o["veic"], o["entrada"], "-", o.get("fim_gps"), o["dist"], "km", "gps:", o["pgps"], "%")
         except SystemExit:
             print("  passagens", o["s"], "indisponíveis")
         except Exception as e:
             print("  passagens", o["s"], "falharam:", e)
-    return {"dia": dia, "at": at, "garagem": cad["garagem"], "S": setores, "aterro": aterro(por_veic, tuple(cad["aterro"]))}, gps_dia
+    limpar_respostas()
+    return {"dia": dia, "at": at, "cidade": CID["nome"], "garagem": cad.get("garagem"), "S": setores,
+            "aterro": aterro(por_veic, tuple(cad["aterro"])) if cad.get("aterro") else None}, gps_dia
 
 
 def indice_hist():
@@ -600,40 +725,13 @@ def guardar_dia(dados, sit, idx):
     idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(x.get("pgps") or 0 if x["sit"] == "GPS" else x["pct"] for x in S) / len(S)) if S else 0, "n": len(S), "i": inc, "v": VERSAO_HIST}
 
 
-def main():
-    agora = dt.datetime.now(TZ)
-    dia = (agora - dt.timedelta(hours=4)).date().isoformat()   # até 04h ainda conta o dia anterior (turno da tarde)
-    cad = json.load(open(os.path.join(AQUI, "setores_trindade.json")))
-    s = entrar()
-    dados, gps_dia = montar(s, dia, cad, agora.strftime("%H:%M"))
-    idx = indice_hist()
-    guardar_dia(dados, "parcial", idx)
-    try:
-        dados["ruas"] = historico_ruas(s, dia, gps_dia)
-    except SystemExit:
-        raise
-    except Exception as e:   # a consulta de ruas nunca derruba o painel
-        print("histórico das ruas indisponível:", e)
-    criptografar(json.dumps(dados, separators=(",", ":")).encode())
-    # dias anteriores: fecha o de ontem e completa o histórico aos poucos
-    feitos = 0
-    for k in range(1, DIAS_BUSCA + 1):
-        d = (dt.date.fromisoformat(dia) - dt.timedelta(days=k)).isoformat()
-        if feitos >= NOVOS_POR_VEZ:
-            break
-        v = idx["dias"].get(d)
-        if isinstance(v, dict) and (v.get("s") == "vazio" or v.get("s") == "final" and v.get("v", 1) >= VERSAO_HIST):   # versões antigas são refeitas
-            continue
-        feitos += 1
-        try:
-            print("histórico do dia", d)
-            dd, _ = montar(s, d, cad, "final")
-            guardar_dia(dd, "final", idx)
-        except (SystemExit, Exception) as e:   # INLOG sem dados desse dia
-            ant = idx["dias"].get(d)
-            t = (ant.get("t", 0) if isinstance(ant, dict) else 0) + 1
-            print("dia", d, "falhou (%d):" % t, e)
-            idx["dias"][d] = {"s": "vazio"} if t >= 3 else {"s": "erro", "t": t}
+def cad_cidade():
+    if CID.get("cad"):
+        return json.load(open(os.path.join(AQUI, CID["cad"])))
+    return {"garagem": CID.get("garagem"), "aterro": CID.get("aterro"), "setores": None}
+
+
+def salvar_indice(idx, dia):
     limite = (dt.date.fromisoformat(dia) - dt.timedelta(days=DIAS_HIST)).isoformat()
     for d in [d for d in idx["dias"] if d < limite]:
         idx["dias"].pop(d)
@@ -641,10 +739,87 @@ def main():
             os.remove(os.path.join(HIST, d + ".enc.json"))
         except OSError:
             pass
+    os.makedirs(HIST, exist_ok=True)
     json.dump(idx, open(os.path.join(HIST, "index.json"), "w"), sort_keys=True)
 
 
-def criptografar(raw, destino=SAIDA, comprimir=False):
+def hoje_cidade(s, dia, agora):
+    cad = cad_cidade()
+    dados, gps_dia = montar(s, dia, cad, agora.strftime("%H:%M"))
+    idx = indice_hist()
+    guardar_dia(dados, "parcial", idx)
+    if CID.get("ruas"):
+        try:
+            dados["ruas"] = historico_ruas(s, dia, gps_dia)
+        except SystemExit:
+            raise
+        except Exception as e:   # a consulta de ruas nunca derruba o painel
+            print("histórico das ruas indisponível:", e)
+    criptografar(json.dumps(dados, separators=(",", ":")).encode(), SAIDA)
+    salvar_indice(idx, dia)
+
+
+def proximo_dia_antigo(idx, dia, feitos):
+    if feitos >= NOVOS_POR_VEZ:
+        return None
+    for k in range(1, CID.get("dias_busca", DIAS_BUSCA) + 1):
+        d = (dt.date.fromisoformat(dia) - dt.timedelta(days=k)).isoformat()
+        v = idx["dias"].get(d)
+        if isinstance(v, dict) and (v.get("s") == "vazio" or v.get("s") == "final" and v.get("v", 1) >= VERSAO_HIST):   # versões antigas são refeitas
+            continue
+        return d
+    return None
+
+
+def main():
+    global GPSX
+    agora = dt.datetime.now(TZ)
+    dia = (agora - dt.timedelta(hours=4)).date().isoformat()   # até 04h ainda conta o dia anterior (turno da noite)
+    s = entrar()
+    arq_gps = os.path.join(CACHE, "gpsx.json")
+    try:
+        GPSX = {k: v for k, v in json.load(open(arq_gps)).items() if k.split("|")[1] >= (dt.date.fromisoformat(dia) - dt.timedelta(days=1)).isoformat()}
+    except Exception:
+        GPSX = {}
+    for slug in CIDADES:   # 1) o dia de hoje de todas as cidades
+        usar_cidade(slug)
+        print("=" * 20, CID["nome"], "=" * 20)
+        try:
+            hoje_cidade(s, dia, agora)
+        except (SystemExit, Exception) as e:   # uma cidade com problema não derruba as outras
+            print("cidade", CID["nome"], "falhou:", e)
+    os.makedirs(CACHE, exist_ok=True)
+    json.dump(GPSX, open(arq_gps, "w"))
+    # 2) dias anteriores: fecha o de ontem e completa o histórico aos poucos, em rodízio, enquanto houver tempo
+    feitos = {slug: 0 for slug in CIDADES}
+    andou = True
+    while andou and time.time() - _T0 < ORCAMENTO:
+        andou = False
+        for slug in CIDADES:
+            if time.time() - _T0 >= ORCAMENTO:
+                break
+            usar_cidade(slug)
+            idx = indice_hist()
+            d = proximo_dia_antigo(idx, dia, feitos[slug])
+            if not d:
+                continue
+            andou = True
+            feitos[slug] += 1
+            try:
+                print("histórico do dia", d, "·", CID["nome"])
+                dd, _ = montar(s, d, cad_cidade(), "final")
+                guardar_dia(dd, "final", idx)
+            except (SystemExit, Exception) as e:   # INLOG sem dados desse dia
+                ant = idx["dias"].get(d)
+                t = (ant.get("t", 0) if isinstance(ant, dict) else 0) + 1
+                print("dia", d, "falhou (%d):" % t, e)
+                idx["dias"][d] = {"s": "vazio"} if t >= 3 else {"s": "erro", "t": t}
+            salvar_indice(idx, dia)
+    print("tempo total: %.0f s" % (time.time() - _T0))
+
+
+def criptografar(raw, destino=None, comprimir=False):
+    destino = destino or SAIDA
     senha = os.environ.get("SENHA_SITE")
     if not senha:
         falha("cadastre o secret SENHA_SITE")
