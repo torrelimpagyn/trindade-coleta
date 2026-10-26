@@ -17,6 +17,7 @@ LOGIN = BASE + "/Rastreamento/Apresentacao/Autenticador/Account/Login?ReturnUrl=
 GRID = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarGridPorData?data={d}"
 ROTA = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarRotaCompleta?codigoSetor={c}&dt={d}"
 PLANO = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarRotasPlanejadas?codigoSetor={c}&data={d}"
+PASSAGENS = BASE + "/Rastreamento/Apresentacao/RastreamentoGeral/VeiculosGenerico/BuscarPassagens?latitude={la}&longitude={lo}&raio={r}&dataInicio={d}%2000:00:00&dataFim={d}%2023:59:59"
 DETALHE = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarDetalhesPlanejamentoSetor?codigoSetor={c}&dt={d}&deslocamento=false"
 DIAS = {0: ("SEG",), 1: ("TER",), 2: ("QUA",), 3: ("QUI",), 4: ("SEX",), 5: ("SAB", "SÁB"), 6: ("DOM",)}
 FILTRO = "TRINDADE"
@@ -38,7 +39,7 @@ ACESSO_ATERRO = [  # via de acesso ao aterro (OpenStreetMap): Av. dos Angicos + 
 RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
 JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
-VERSAO_HIST = 4         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+VERSAO_HIST = 5         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
 
 
 def falha(msg):
@@ -171,6 +172,57 @@ def cobertura(lin, trv, raio=25, vel_max=25):
                 if perto(q):
                     ok += L / n
     return round(100 * ok / tot, 1) if tot else None
+
+
+def gps_sem_controle(s, dia, o, min_cob=15):
+    """Setor sem controle na INLOG (aparece como AGUARDANDO 0%): procura no GPS os veículos que coletaram nele
+    (passagens perto do setor, devagar, dentro do polígono). Se achar, o setor vira "realizado pelo GPS"."""
+    pts_area = [tuple(p) for r in o["ring"] for p in r] + [tuple(q) for _, l in o["lin"] for q in l]
+    if not pts_area:
+        return
+    c = (sum(p[0] for p in pts_area) / len(pts_area), sum(p[1] for p in pts_area) / len(pts_area))
+    raio = min(4000, int(max(dist_m(c, p) for p in pts_area)) + 100)
+    resp = pegar_json(s, PASSAGENS.format(la=round(c[0], 6), lo=round(c[1], 6), r=raio, d=dia)) or []
+    por_v = {}
+    for blk in resp:
+        for h in blk.get("Historico") or []:
+            v = h.get("Identificador") or blk.get("IdentificadorVeiculo") or "?"
+            t = dt.datetime.fromisoformat(h["DataHora"][:19])
+            por_v.setdefault(v, {})[t] = ((h["Latitude"] / 1e6, h["Longitude"] / 1e6), h.get("Velocidade") or 0)
+    no_setor = lambda q: any(dentro(q, r) for r in o["ring"]) if o["ring"] else True
+    escolhidos = {}
+    for v, d in por_v.items():
+        tr = [(t, q, vel) for t, (q, vel) in sorted(d.items())]
+        dentro_lento = [x for x in tr if x[2] <= 25 and no_setor(x[1])]
+        if len(dentro_lento) < 20:
+            continue
+        cob = cobertura(o["lin"], {v: tr})
+        print("   ", o["s"], "sem controle na INLOG · GPS de", v, ":", cob, "% da rota,", len(dentro_lento), "pontos coletando no setor")
+        if cob and cob >= min_cob:
+            escolhidos[v] = (tr, dentro_lento)
+    if not escolhidos:
+        return
+    o["sit"], o["fonte"] = "GPS", "gps"
+    o["veic"] = sorted(escolhidos)
+    o["pgps"] = cobertura(o["lin"], {v: tr for v, (tr, _) in escolhidos.items()})
+    p0 = min((dl[0] for _, dl in escolhidos.values()), key=lambda x: x[0])
+    o["entrada"] = p0[0].strftime("%H:%M")
+    o["ini"] = [round(p0[1][0], 5), round(p0[1][1], 5), o["entrada"]]
+    o["gps"], km, t_ini, t_fim, ult = [], 0, None, None, None
+    for v, (tr, dl) in escolhidos.items():
+        a, b = dl[0][0], dl[-1][0]
+        seg = [x for x in tr if a <= x[0] <= b]
+        km += sum(dist_m(p[1], q[1]) for p, q in zip(seg, seg[1:]) if (q[0] - p[0]).total_seconds() <= 180) / 1000
+        t_ini = a if t_ini is None or a < t_ini else t_ini
+        t_fim = b if t_fim is None or b > t_fim else t_fim
+        if ult is None or tr[-1][0] > ult[0]:
+            ult = tr[-1]
+        o["gps"].append([v, a.strftime("%H:%M"), b.strftime("%H:%M"), enc(simplificar([x[1] for x in seg]))])
+    o["dist"] = round(km, 1)
+    if t_fim > t_ini:
+        o["vel"] = round(km / ((t_fim - t_ini).total_seconds() / 3600), 1)
+    o["fim_gps"] = t_fim.strftime("%H:%M")
+    o["pos"], o["ult"] = [ult[1][0], ult[1][1]], ult[0].strftime("%d/%m %H:%M")
 
 
 def dentro(pt, anel):
@@ -497,6 +549,13 @@ def montar(s, dia, cad, at):
                 raise
             except Exception as e:   # sem rota programada: o card continua funcionando
                 print("  rota", cod, "indisponível:", e)
+            if not x.get("Controle") and not o["pct"] and o["lin"]:
+                try:   # a INLOG não registrou o setor: confere no GPS se algum caminhão coletou nele
+                    gps_sem_controle(s, dia_x, o)
+                except SystemExit:
+                    print("  passagens", cod, "indisponíveis")
+                except Exception as e:
+                    print("  passagens", cod, "falharam:", e)
         o.pop("_ent", None)
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%", "gps:", o.get("pgps"), "%")
@@ -529,7 +588,7 @@ def guardar_dia(dados, sit, idx):
     os.makedirs(HIST, exist_ok=True)
     criptografar(json.dumps(dados, separators=(",", ":")).encode(), os.path.join(HIST, dados["dia"] + ".enc.json"), True)
     inc = sum(1 for x in dados["S"] if x["sit"] == "EXECUTADO" and x["pct"] < 90)
-    idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(x["pct"] for x in S) / len(S)) if S else 0, "n": len(S), "i": inc, "v": VERSAO_HIST}
+    idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(x.get("pgps") or 0 if x["sit"] == "GPS" else x["pct"] for x in S) / len(S)) if S else 0, "n": len(S), "i": inc, "v": VERSAO_HIST}
 
 
 def main():
