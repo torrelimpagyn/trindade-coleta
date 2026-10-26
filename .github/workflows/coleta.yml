@@ -34,7 +34,7 @@ jobs:
         id: hora
         run: |
           h=$(TZ=America/Sao_Paulo date +%H%M)
-          if [ "$h" -ge 0100 ] && [ "$h" -lt 0350 ]; then echo "fora=1" >> "$GITHUB_OUTPUT"; echo "Fora do horário ($h)"; fi
+          if [ "$h" -ge 0200 ] && [ "$h" -lt 0350 ]; then echo "fora=1" >> "$GITHUB_OUTPUT"; echo "Fora do horário ($h)"; fi
       - uses: actions/checkout@v4
         if: steps.hora.outputs.fora != '1'
       - uses: actions/setup-python@v5
@@ -62,7 +62,8 @@ jobs:
             git clone -q --depth 1 -b dados "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/pub 2>/dev/null || mkdir -p /tmp/pub
             rm -rf /tmp/pub/.git && mkdir -p /tmp/pub/hist
             cp docs/dados.enc.json /tmp/pub/ && cp docs/hist/* /tmp/pub/hist/ 2>/dev/null
-            python3 -c "import json,os,glob;d=json.load(open('/tmp/pub/hist/index.json'))['dias'];[os.remove(f) for f in glob.glob('/tmp/pub/hist/*.enc.json') if os.path.basename(f)[:10] not in d]" 2>/dev/null
+            mkdir -p /tmp/pub/c && cp -r docs/c/. /tmp/pub/c/ 2>/dev/null
+            python3 -c "import json,os,glob;[os.remove(f) for ix in glob.glob('/tmp/pub/hist/index.json')+glob.glob('/tmp/pub/c/*/hist/index.json') for d in [json.load(open(ix))['dias']] for f in glob.glob(os.path.dirname(ix)+'/*.enc.json') if os.path.basename(f)[:10] not in d]" 2>/dev/null
             cd /tmp/pub && git init -q && git add . \
               && git -c user.name=coletor -c user.email=coletor@users.noreply.github.com commit -qm "dados $(TZ=America/Sao_Paulo date +%H:%M)" \
               && git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:dados
@@ -73,7 +74,7 @@ jobs:
           while [ $SECONDS -lt $fim ]; do
             sleep $((300 - $(date +%s) % 300))
             h=$(TZ=America/Sao_Paulo date +%H%M)
-            if [ "$h" -ge 0100 ] && [ "$h" -lt 0350 ]; then echo "Fim do horário de coleta"; break; fi
+            if [ "$h" -ge 0200 ] && [ "$h" -lt 0350 ]; then echo "Fim do horário de coleta"; break; fi
             git pull -q --ff-only origin main || true   # usa sempre a versão mais nova do coletor
             if (python coletor/coletor.py); then publicar || echo "falha ao publicar"; else echo "coleta falhou, tento de novo em 5 min"; fi
           done
