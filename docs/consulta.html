@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Consulta de endereço · Trindade</title>
+<title>Consulta de endereço</title>
 <script>document.documentElement.className+=" js";</script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
@@ -115,6 +115,8 @@ body{background:var(--page);color:var(--ink);font:14px/1.45 system-ui,-apple-sys
 .static summary{font-weight:700;cursor:pointer}
 .static .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
 .back{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:600;color:var(--accent);text-decoration:none;margin-left:auto;white-space:nowrap}
+.cidsel{margin-left:auto;max-width:140px;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:4px 6px;cursor:pointer}
+.cidsel+.back{margin-left:8px}
 .ult{background:color-mix(in srgb,var(--ok) 10%,transparent);border-radius:10px;padding:9px 11px;margin-top:8px;font-size:13px}
 .ult b{font-size:14.5px}
 .ult.old{background:color-mix(in srgb,#d39200 14%,transparent)}
@@ -129,7 +131,7 @@ body{background:var(--page);color:var(--ink);font:14px/1.45 system-ui,-apple-sys
     <div class="box head">
       <div class="brand">
         <div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></div>
-        <div><h1>Consulta de endereço</h1><p>Setor, horário e última coleta da rua</p></div><a class="back" href="./">‹ Painel</a>
+        <div><h1>Consulta de endereço</h1><p>Setor, horário e última coleta da rua</p></div><select id="cid" class="cidsel" aria-label="Cidade"></select><a class="back" id="back" href="./">‹ Painel</a>
       </div>
       <div class="search">
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -147,8 +149,18 @@ body{background:var(--page);color:var(--ink);font:14px/1.45 system-ui,-apple-sys
 <script>
 
 let C;
+// ---------- cidade (a mesma escolhida no painel)
+const CIDADES = [{s:'trindade',n:'Trindade',p:'',uf:'GO'},{s:'anapolis',n:'Anápolis',uf:'GO'},{s:'araguari',n:'Araguari',uf:'MG'},{s:'ariquemes',n:'Ariquemes',uf:'RO'},{s:'cidade-ocidental',n:'Cidade Ocidental',uf:'GO'},{s:'jandira',n:'Jandira',uf:'SP'},{s:'jatai',n:'Jataí',uf:'GO'},{s:'luziania',n:'Luziânia',uf:'GO'},{s:'santa-vitoria',n:'Santa Vitória',uf:'MG'},{s:'valparaiso',n:'Valparaíso',g:'Valparaíso de Goiás',uf:'GO'}];
+let CX = CIDADES[0];
+{ const q = new URLSearchParams(location.search).get('c'); let m = null; try { m = localStorage.getItem('tc_cid'); } catch (e) {}
+  CX = CIDADES.find(c => c.s === q) || CIDADES.find(c => c.s === m) || CIDADES[0]; }
+const PRE = CX.p != null ? CX.p : 'c/' + CX.s + '/', TRI = CX.s === 'trindade';
+document.title = 'Consulta de endereço · ' + CX.n;
+{ const sel = document.querySelector('#cid'); sel.innerHTML = CIDADES.map(c => `<option value="${c.s}"${c === CX ? ' selected' : ''}>${c.n}</option>`).join('');
+  sel.onchange = () => { try { localStorage.setItem('tc_cid', sel.value); } catch (e) {} location.search = '?c=' + sel.value; };
+  document.querySelector('#back').href = './?c=' + CX.s; }
 // ---------- última coleta (dados do painel, protegidos por senha)
-const RAW = 'https://raw.githubusercontent.com/torrelimpagyn/trindade-coleta/dados/dados.enc.json';
+const RAW = 'https://raw.githubusercontent.com/torrelimpagyn/trindade-coleta/dados/' + PRE + 'dados.enc.json';
 const EPOCA = new Date(2026, 0, 1).getTime();
 let ULT = null, ULT_AT = '', ULT_ERR = '';
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
@@ -157,7 +169,7 @@ async function carregarUlt(){
   if (!pw){ ULT_ERR = 'senha'; return; }
   try {
     let e; try { const r = await fetch(RAW + '?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) e = await r.json(); } catch (x) {}
-    if (!e) e = await (await fetch('dados.enc.json?t=' + Date.now(), { cache: 'no-store' })).json();
+    if (!e) e = await (await fetch(PRE + 'dados.enc.json?t=' + Date.now(), { cache: 'no-store' })).json();
     const k0 = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
     const k = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64(e.sal), iterations: 200000, hash: 'SHA-256' }, k0, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
     let raw = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(e.iv) }, k, b64(e.dados));
@@ -176,7 +188,9 @@ function decodeGrid(g){
   }
   g.c = out; return g;
 }
-fetch('consulta_dados.json').then(r => r.json()).then(d => { C = d; decodeGrid(C.grid); app(); carregarUlt().then(() => { const r = document.querySelector('#res'); if (window.__ultimo) window.__ultimo(); }); });
+fetch(PRE + 'consulta_dados.json').then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).catch(() => null).then(d => {
+  if (!d){ const r = document.querySelector('#res'); r.innerHTML = `<div class="warn">A consulta de endereços de ${CX.n} ainda está sendo preparada. Volte mais tarde.</div>`; document.body.classList.add('hasres'); return; }
+  C = d; decodeGrid(C.grid); app(); carregarUlt().then(() => { const r = document.querySelector('#res'); if (window.__ultimo) window.__ultimo(); }); });
 function app(){
 function quando(m){
   const d = new Date(EPOCA + m * 60000), hoje = new Date(); hoje.setHours(0,0,0,0);
@@ -187,7 +201,7 @@ function quando(m){
 }
 function ultimaHTML(i, perto){
   const lbl = perto ? 'Última coleta na rua mais próxima' : 'Última coleta nesta rua';
-  if (ULT_ERR === 'senha') return `<div class="ult none">${lbl}: <a href="./">entre no painel</a> com a senha para ver.</div>`;
+  if (ULT_ERR === 'senha') return `<div class="ult none">${lbl}: <a href="./?c=${CX.s}">entre no painel</a> com a senha para ver.</div>`;
   if (!ULT) return `<div class="ult none">${lbl}: carregando…</div>`;
   const m = ULT[i];
   if (!m) return `<div class="ult none">${lbl}: <b>sem registro nos últimos dias</b><br><span class="muted">O GPS dos caminhões não passou por esta rua no período registrado.</span></div>`;
@@ -207,14 +221,16 @@ const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).
 const norm = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hm = m => { m = Math.round(m) % 1440; return `${String(Math.floor(m/60)).padStart(2,'0')}h${String(m%60).padStart(2,'0')}`; };
-C.sectors.forEach(s => { if (s.turno === 'MATUTINO'){ s.ini = 240; s.fim = 740; } else { s.ini = 900; s.fim = 1400; } });
+const JAN = { MATUTINO: [240, 740], MANHA: [240, 740], DIURNO: [420, 1020], INTEGRAL: [420, 1320], VESPERTINO: [900, 1400], TARDE: [780, 1140], NOTURNO: [1140, 1680] };
+C.sectors.forEach(s => { if (TRI){ if (s.turno === 'MATUTINO'){ s.ini = 240; s.fim = 740; } else { s.ini = 900; s.fim = 1400; } } else if (s.ini == null || s.fim == null){ [s.ini, s.fim] = JAN[s.turno] || [420, 1020]; } });
 const SEC = Object.fromEntries(C.sectors.map(s => [s.code, s]));
 const NOMEDIA = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
 // grupos de cor
-const grpKey = s => s.freq === 'DIARIO' ? 'dia' : (s.freq === 'SEG/QUA/SEX' ? 'sqs' : 'tqs') + (s.turno === 'MATUTINO' ? '-m' : '-v');
+const MANHA = ['MATUTINO', 'MANHA', 'DIURNO', 'INTEGRAL'];
+const grpKey = s => s.dow.length >= 6 ? 'dia' : (s.dow.includes(0) ? 'sqs' : 'tqs') + (MANHA.includes(s.turno) ? '-m' : '-v');
 const GRPS = [['sqs-m','Seg/Qua/Sex · manhã'],['sqs-v','Seg/Qua/Sex · tarde e noite'],['tqs-m','Ter/Qui/Sáb · manhã'],['tqs-v','Ter/Qui/Sáb · tarde e noite'],['dia','Todos os dias · manhã']];
 const colOf = s => css('--g-' + grpKey(s));
-const turnoTxt = s => s.turno === 'MATUTINO' ? 'Matutino' : 'Vespertino';
+const turnoTxt = s => ({ MATUTINO: 'Matutino', MANHA: 'Manhã', DIURNO: 'Diurno', INTEGRAL: 'Integral', VESPERTINO: 'Vespertino', TARDE: 'Tarde', NOTURNO: 'Noturno' })[s.turno] || (s.turno ? s.turno[0] + s.turno.slice(1).toLowerCase() : '');
 const jsDows = s => s.dow.map(d => (d + 1) % 7);          // 0=domingo
 function proxima(s){
   const now = new Date(), today = now.getDay(), mins = now.getHours()*60 + now.getMinutes();
@@ -272,6 +288,7 @@ function secCard(s, la, lo){
 }
 // ---------- mapa
 const map = L.map('map', { zoomControl: false, zoomSnap: .25, attributionControl: true }).setView([-16.651, -49.49], 13);
+const ALLB = L.latLngBounds(C.sectors.flatMap(s => s.rings.flat()));
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 const ruas = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Mapa © Esri · Ruas © OpenStreetMap' }).addTo(map);
 const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagem © Esri' });
@@ -295,7 +312,8 @@ function style(){
 function legend(){ $('#leg').innerHTML = GRPS.map(([k, n]) => `<span><i style="background:${css('--g-' + k)}"></i>${n}</span>`).join(''); }
 let sel = null;
 const all = L.latLngBounds(C.sectors.flatMap(s => s.rings.flat()));
-map.fitBounds(L.latLngBounds(C.sectors.filter(s=>!['2001','2000'].includes(s.code)).flatMap(s => s.rings.flat())).extend(SEC['2000'].rings[0]), { padding: [20, 20] });
+if (TRI) map.fitBounds(L.latLngBounds(C.sectors.filter(s=>!['2001','2000'].includes(s.code)).flatMap(s => s.rings.flat())).extend(SEC['2000'].rings[0]), { padding: [20, 20] });
+else map.fitBounds(ALLB, { padding: [20, 20] });
 style();
 
 const marker = L.marker([0, 0], { icon: L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [26, 26], iconAnchor: [13, 26] }) });
@@ -360,12 +378,15 @@ function buscaLocal(q){
   return { ruas, bairros, setores };
 }
 // ---------- endereço com número (online)
-const EXT = '-49.67,-16.78,-49.35,-16.54', LOC = '-49.49,-16.65';
+const EXT = TRI ? '-49.67,-16.78,-49.35,-16.54' : [ALLB.getWest() - .05, ALLB.getSouth() - .05, ALLB.getEast() + .05, ALLB.getNorth() + .05].map(v => v.toFixed(3)).join(','),
+      LOC = TRI ? '-49.49,-16.65' : ALLB.getCenter().lng.toFixed(4) + ',' + ALLB.getCenter().lat.toFixed(4);
+const CNOME = CX.g || CX.n, CN = norm(CNOME), CRE = new RegExp('\\b' + norm(CX.n) + '\\b');
+const semUF = t => t.replace(/, (Goiás|Minas Gerais|Rondônia|São Paulo)(,.*)?$/, '');
 const GEO = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/';
 let onlineSug = [], seq = 0;
 async function sugOnline(q, my){
-  try{ const u = `${GEO}suggest?f=json&countryCode=BRA&maxSuggestions=6&location=${LOC}&searchExtent=${encodeURIComponent(EXT)}&text=${encodeURIComponent(q + (/\btrindade\b/i.test(q) ? '' : ' Trindade GO'))}`;
-    const j = await (await fetch(u)).json(); if (my !== seq) return; onlineSug = (j.suggestions || []).filter(s => /Trindade/i.test(s.text)); renderSug(); } catch (e) {}
+  try{ const u = `${GEO}suggest?f=json&countryCode=BRA&maxSuggestions=6&location=${LOC}&searchExtent=${encodeURIComponent(EXT)}&text=${encodeURIComponent(q + (CRE.test(norm(q)) ? '' : ' ' + CNOME + ' ' + CX.uf))}`;
+    const j = await (await fetch(u)).json(); if (my !== seq) return; onlineSug = (j.suggestions || []).filter(s => norm(s.text).includes(CN)); renderSug(); } catch (e) {}
 }
 async function geocode(text, magicKey){
   const u = `${GEO}findAddressCandidates?f=json&countryCode=BRA&maxLocations=1&outFields=Match_addr&location=${LOC}&searchExtent=${encodeURIComponent(EXT)}&SingleLine=${encodeURIComponent(text)}` + (magicKey ? `&magicKey=${encodeURIComponent(magicKey)}` : '');
@@ -379,7 +400,7 @@ function renderSug(){
   const v = q.value.trim(); if (!v){ sg.style.display = 'none'; return; }
   const L0 = buscaLocal(v); items = []; let h = '';
   const add = (grp, arr, f) => { if (!arr.length) return; h += `<div class="grp">${grp}</div>`; arr.forEach(x => { const o = f(x); items.push(o.go); h += `<button role="option" data-i="${items.length-1}">${o.ic}<span><span class="t">${o.t}</span>${o.s ? `<span class="s" style="display:block">${o.s}</span>` : ''}</span></button>`; }); };
-  add('Endereços', onlineSug, s => ({ ic: `<span class="k">${IC.pin}</span>`, t: esc(s.text.split(',')[0]), s: esc(s.text.split(',').slice(1, 3).join(',')), go: async () => { try { const r = await geocode(s.text, s.magicKey); mostrarPonto(r.la, r.lo, r.t.split(', Goiás')[0]); } catch (e) { setRes('<div class="warn">Endereço não encontrado.</div>'); } } }));
+  add('Endereços', onlineSug, s => ({ ic: `<span class="k">${IC.pin}</span>`, t: esc(s.text.split(',')[0]), s: esc(s.text.split(',').slice(1, 3).join(',')), go: async () => { try { const r = await geocode(s.text, s.magicKey); mostrarPonto(r.la, r.lo, semUF(r.t)); } catch (e) { setRes('<div class="warn">Endereço não encontrado.</div>'); } } }));
   add('Ruas', L0.ruas, s => ({ ic: `<span class="k">${IC.st}</span>`, t: esc(s.n) + s.sec.map(([c]) => `<span class="chipS" style="background:${colOf(SEC[c])}">${c}</span>`).join(''), s: esc(s.b || '') + (s.sec.length ? '' : (s.b ? ' · ' : '') + 'fora da área de coleta'), go: () => mostrarRua(s) }));
   add('Bairros', L0.bairros, b => ({ ic: `<span class="k">${IC.pin}</span>`, t: esc(b[0]), s: '', go: () => mostrarPonto(b[1], b[2], b[0]) }));
   add('Setores', L0.setores, s => ({ ic: `<span class="k"><i style="display:block;width:14px;height:14px;margin:2px;border-radius:4px;background:${colOf(s)}"></i></span>`, t: 'Setor ' + s.code, s: s.dias + ' · ' + turnoTxt(s), go: () => { const b = POLY[s.code].getBounds(); map.fitBounds(b, { paddingTopLeft: innerWidth > 720 ? [420, 20] : [10, 140] }); mostrarPonto(b.getCenter().lat, b.getCenter().lng, 'Setor ' + s.code, true); } }));
@@ -391,7 +412,7 @@ function renderSug(){
 function escolher(i){ const f = items[i]; sg.style.display = 'none'; q.blur(); if (f) f(); }
 async function buscarTexto(v){
   sg.style.display = 'none';
-  try { const r = await geocode(v + (/trindade/i.test(v) ? '' : ', Trindade, GO')); mostrarPonto(r.la, r.lo, r.t.split(', Goiás')[0]); }
+  try { const r = await geocode(v + (CRE.test(norm(v)) ? '' : ', ' + CNOME + ', ' + CX.uf)); mostrarPonto(r.la, r.lo, semUF(r.t)); }
   catch (e) { const L0 = buscaLocal(v); if (L0.ruas[0]) mostrarRua(L0.ruas[0]); else setRes('<div class="warn">Não encontramos este endereço. Confira o nome da rua.</div>'); }
 }
 q.addEventListener('input', () => { $('#clr').style.display = q.value ? 'block' : 'none'; onlineSug = []; renderSug(); clearTimeout(tmr); const my = ++seq; if (q.value.trim().length >= 3) tmr = setTimeout(() => sugOnline(q.value.trim(), my), 280); });
