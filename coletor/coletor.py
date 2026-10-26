@@ -39,7 +39,7 @@ ACESSO_ATERRO = [  # via de acesso ao aterro (OpenStreetMap): Av. dos Angicos + 
 RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
 JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
-VERSAO_HIST = 6         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+VERSAO_HIST = 7         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
 
 
 def falha(msg):
@@ -174,10 +174,10 @@ def cobertura(lin, trv, raio=25, vel_max=25):
     return round(100 * ok / tot, 1) if tot else None
 
 
-def gps_sem_controle(s, dia, o, ocupado=None, min_cob=15, min_pts=40):
+def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120):
     """Setor sem controle na INLOG (aparece como AGUARDANDO 0%): procura no GPS os veículos que coletaram nele
     (passagens perto do setor, devagar, dentro do polígono). Se achar, o setor vira "realizado pelo GPS"."""
-    pts_area = [tuple(p) for r in o["ring"] for p in r] + [tuple(q) for _, l in o["lin"] for q in l]
+    pts_area = [tuple(q) for _, l in o["lin"] for q in l]   # centro e raio pela rota (o polígono pode ter partes longe)
     if not pts_area:
         return
     c = (sum(p[0] for p in pts_area) / len(pts_area), sum(p[1] for p in pts_area) / len(pts_area))
@@ -188,6 +188,8 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=15, min_pts=40):
         for h in blk.get("Historico") or []:
             v = h.get("Identificador") or blk.get("IdentificadorVeiculo") or "?"
             t = dt.datetime.fromisoformat(h["DataHora"][:19])
+            if t.date().isoformat() != dia:
+                continue
             if ocupado and (v, t.replace(second=0)) in ocupado:
                 continue   # nesse minuto o caminhão já estava num controle de outro setor da INLOG
             por_v.setdefault(v, {})[t] = ((h["Latitude"] / 1e6, h["Longitude"] / 1e6), h.get("Velocidade") or 0)
