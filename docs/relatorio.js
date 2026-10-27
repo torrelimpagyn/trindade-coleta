@@ -1,6 +1,7 @@
-// Relatório do fechamento do dia (uma cidade), no papel timbrado da Quebec Ambiental (Planejamento e Controle).
-// Folhas A4 com a barra verde e a logo; baixa como imagem, compartilha ou imprime/salva em PDF.
-// Usa os dados do dia abertos no painel (D) e, quando existem, as funções do index.html (stEnc, encerrou, peTxt, SIT, TLAB).
+// Relatório do fechamento (uma cidade), no papel timbrado da Quebec Ambiental (Planejamento e Controle).
+// Fechamento do dia completo (resumo e uma seção por turno) ou de um turno só; folhas A4 com a barra verde e a logo.
+// Baixa como imagem, compartilha ou imprime/salva em PDF. Usa os dados do dia abertos no painel (D) e,
+// quando existem, as funções do index.html (stEnc, encerrou, peTxt, SIT, TLAB).
 (function () {
   const LOGO = 'data:image/webp;base64,' +
     'UklGRhAVAABXRUJQVlA4IAQVAADwagCdASoEASgBPmEslEYkIqIhJ1RbKIAMCWdu4W0Q/aB3Li9TTUnqbgHra8UDpweZvHVd6E/a/KUPUX+d7a/81/eOo29F' +
@@ -69,7 +70,9 @@
   const n0 = (v, d = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
   const min = t => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return isNaN(h) ? null : h * 60 + (m || 0); };
   const hmin = m => { if (m == null) return '—'; m = Math.round(m); return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`; };
+  const hora = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
   const km = m => m >= 1000 ? n0(m / 1000, 1) + ' km' : n0(m) + ' m';
+  const pl = (n, a, b) => n === 1 ? a : b;
   const saiu = s => s.sit !== 'AGUARDANDO' || s.pct;
   const pg = s => s.sit === 'GPS' ? (s.pgps || 0) : s.pct;
   const cor = s => !saiu(s) ? '#c9d0cc' : s.sit === 'GPS' ? '#6f95e8' : pg(s) >= 90 ? '#4fb37f' : pg(s) >= 70 ? '#e9b44c' : '#e06b62';
@@ -80,11 +83,68 @@
   const enc = s => typeof encerrou === 'function' ? encerrou(s) : (s.sit === 'EXECUTADO' && s.pct < 90);
   const tlab = t => (typeof TLAB !== 'undefined' && TLAB[t]) || t || 'Outros';
   const depois = s => typeof peTxt === 'function' && s.pe ? peTxt(s) : '';
-  function extra(s, jor) {   // tempo fora da garagem além da jornada
-    const a = min(s.saida), b = min(s.volta);
+  const ordem = (a, b) => String(a.s).localeCompare(String(b.s), 'pt-BR', { numeric: true });
+  const slug = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+  // ------------------------------------------------------------ turnos
+  // Expediente informado pela operação (minutos desde 00:00; passa de 1440 quando vira a meia-noite).
+  // Nessas cidades o turno de cada setor sai do horário em que o caminhão trabalhou (a INLOG marca Diurno/Noturno/Integral).
+  const CO_VAL = [{ k: 'M', n: 'Manhã', ini: 420, fim: 960, sab: [420, 660] }, { k: 'T', n: 'Tarde', ini: 960, fim: 1320, sab: [960, 1320] }];
+  const EXP = {
+    luziania: [{ k: 'M', n: 'Manhã', ini: 420, fim: 920, sab: [360, 860] }, { k: 'N', n: 'Noite', ini: 1140, fim: 1640, sab: [960, 1460] }],
+    'cidade-ocidental': CO_VAL, valparaiso: CO_VAL
+  };
+  const TORD = ['MATUTINO', 'MANHA', 'DIURNO', 'INTEGRAL', 'VESPERTINO', 'TARDE', 'NOTURNO', 'OUTROS'];
+  function janela(s) {   // [saída, retorno] do caminhão em minutos (GPS quando não há saída/retorno da garagem)
+    let a = min(s.saida), b = min(s.volta);
+    const g = (s.gps || []).map(x => [min(x[1]), min(x[2])]).filter(x => x[0] != null);
+    if (a == null && g.length) a = Math.min(...g.map(x => x[0] < 240 ? x[0] + 1440 : x[0]));
+    if (a == null) a = min(s.rast0);
+    if (a == null) return null;
+    if (a < 240) a += 1440;
+    if (b == null && g.length) b = Math.max(...g.map(x => x[1] == null ? 0 : x[1] < 240 ? x[1] + 1440 : x[1]));
+    if (b == null || b <= 0) b = a + 60;
+    while (b < a) b += 1440;
+    return [a, b];
+  }
+  function grupos(D, CX) {
+    const [y, mo, da] = D.dia.split('-'), dow = new Date(+y, mo - 1, +da).getDay(), cfg = EXP[CX.s];
+    const S = [...D.S].sort(ordem);
+    let atm = D.at === 'final' ? Infinity : min(D.at);
+    if (atm != null && atm < 240) atm += 1440;
+    if (cfg) {
+      const G = cfg.map(T => { const w = dow === 6 && T.sab ? T.sab : [T.ini, T.fim]; return { k: T.k, n: T.n, ini: w[0], fim: w[1], S: [], fechado: atm == null || atm >= w[1] }; });
+      const X = { k: 'X', n: 'Turno não identificado', S: [], fechado: D.at === 'final' };
+      const lab = s => String(s.turno || '').toUpperCase();
+      S.forEach(s => {
+        const J = janela(s);
+        let g = null;
+        if (J) {
+          let best = -1;
+          G.forEach(T => { const o = Math.min(J[1], T.fim) - Math.max(J[0], T.ini); if (o > best) { best = o; g = T; } });
+          if (best <= 0) g = G.reduce((a, T) => { const d = J[0] < T.ini ? T.ini - J[0] : Math.max(0, J[0] - T.fim); return !a || d < a.d ? { d, T } : a; }, null).T;
+        } else {
+          const l = lab(s);
+          g = ['MATUTINO', 'MANHA', 'DIURNO'].includes(l) ? G[0] : ['VESPERTINO', 'TARDE', 'NOTURNO'].includes(l) ? G[G.length - 1] : X;
+        }
+        g.S.push(s);
+      });
+      return G.concat([X]).filter(T => T.S.length);
+    }
+    const M = new Map();   // demais cidades: turno da INLOG
+    S.forEach(s => { const t = s.turno || 'OUTROS'; if (!M.has(t)) M.set(t, { k: t, n: tlab(t), S: [], fechado: D.at === 'final' }); M.get(t).S.push(s); });
+    const ix = t => { const i = TORD.indexOf(t); return i < 0 ? 99 : i; };
+    return [...M.values()].sort((a, b) => ix(a.k) - ix(b.k));
+  }
+  const expTxt = T => T.ini != null ? `${hora(T.ini)}–${hora(T.fim)}` : '';
+  const nomeT = T => T.k === 'X' ? T.n : `Turno da ${T.n.toLowerCase()}`;
+  function extra(s, T, jor) {   // hora extra: fora do expediente do turno (ou além da jornada, nas cidades sem expediente cadastrado)
+    let a = min(s.saida), b = min(s.volta);
     if (a == null || b == null) return null;
-    let d = b - a; if (d < 0) d += 1440;
-    return { dur: d, he: Math.max(0, d - jor) };
+    if (a < 240) a += 1440;
+    while (b < a) b += 1440;
+    if (T && T.ini != null) return { dur: b - a, he: Math.max(0, T.ini - a) + Math.max(0, b - T.fim) };
+    return { dur: b - a, he: Math.max(0, b - a - jor) };
   }
 
   // ------------------------------------------------------------ ruas sem coleta (rota programada × GPS)
@@ -92,7 +152,7 @@
   const CONS = {};
   const consulta = pre => CONS[pre] || (CONS[pre] = fetch(pre + 'consulta_dados.json?t=' + Math.floor(Date.now() / 36e5)).then(r => r.ok ? r.json() : null).then(c => c && indice(c)).catch(() => null));
   function indice(c) {   // ruas da consulta de endereços, amostradas a cada 15 m numa grade de ~33 m
-    const C = Math.cos(-16 * Math.PI / 180), cel = new Map(), K = .0003;
+    const C = Math.cos(((c.garagem || [-16])[0]) * Math.PI / 180), cel = new Map(), K = .0003;
     c.streets.forEach((s, i) => (s[3] || '').split(';').forEach(p => {
       const P = dec(p);
       for (let j = 0; j < P.length; j++) {
@@ -105,11 +165,9 @@
     }));
     return { ruas: c.streets, cel, K, C };
   }
-  function semColeta(s, R) {
-    if ((s.nf || []).length) return { lista: s.nf.map(x => ({ r: x[0], b: x[1], m: x[2] })), tot: s.nfm || s.nf.reduce((a, x) => a + x[2], 0), fonte: 'gps' };
-    if (!(s.lin || []).length || !(s.gps || []).length) return s.nfm ? { lista: [], tot: s.nfm, fonte: 'gps' } : null;
+  function porRota(s, R, comGps) {   // metros da rota programada sem passagem do caminhão, por rua da consulta
     const C = Math.cos(((s.lin[0][1][0] || [-16])[0]) * Math.PI / 180), xy = p => [p[1] * 111320 * C, p[0] * 110574], G = new Map(), T = 25;
-    s.gps.forEach(g => {
+    if (comGps) s.gps.forEach(g => {
       const P = dec(g[3]).map(xy);
       for (let j = 0; j + 1 < P.length; j++) {
         const a = P[j], b = P[j + 1], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -118,7 +176,7 @@
         for (let k = 0; k <= n; k++) { const q = [a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n], key = Math.floor(q[0] / T) + '_' + Math.floor(q[1] / T); (G.get(key) || G.set(key, []).get(key)).push(q); }
       }
     });
-    const perto = q => { const cx = Math.floor(q[0] / T), cy = Math.floor(q[1] / T); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const L = G.get((cx + i) + '_' + (cy + j)); if (L) for (const p of L) if (Math.hypot(p[0] - q[0], p[1] - q[1]) <= T) return true; } return false; };
+    const perto = q => { if (!comGps) return false; const cx = Math.floor(q[0] / T), cy = Math.floor(q[1] / T); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const L = G.get((cx + i) + '_' + (cy + j)); if (L) for (const p of L) if (Math.hypot(p[0] - q[0], p[1] - q[1]) <= T) return true; } return false; };
     const acc = new Map(); let tot = 0;
     s.lin.forEach(l => {
       const P = l[1];
@@ -137,111 +195,171 @@
         }
       }
     });
-    const lista = [...acc].filter(([i, m]) => m >= 40).map(([i, m]) => ({ r: i >= 0 ? R.ruas[i][0] : '(trecho sem nome)', b: i >= 0 ? R.ruas[i][1] : '', m: Math.round(m) })).sort((a, b) => b.m - a.m);
-    return { lista, tot: Math.round(tot), fonte: 'rota' };
+    const lista = [...acc].filter(([i, m]) => m >= 40).map(([i, m]) => ({ r: i >= 0 ? R.ruas[i][0] : '(trecho sem nome no cadastro)', b: i >= 0 ? R.ruas[i][1] : '', m: Math.round(m) }));
+    return { lista, tot: Math.round(tot) };
+  }
+  const ordM = L => L.sort((a, b) => b.m - a.m || a.r.localeCompare(b.r, 'pt-BR'));
+  function semColeta(s, R, naoSaiu) {
+    const temRota = (s.lin || []).length > 0;
+    if (naoSaiu) { if (!temRota) return null; const r = porRota(s, R, false); return { lista: ordM(r.lista), tot: r.tot, ns: true }; }   // não saiu: a rota inteira ficou sem coleta
+    const nf = (s.nf || []).map(x => ({ r: x[0] || '(trecho sem nome no cadastro)', b: x[1] || '', m: x[2] }));
+    const totNf = s.nfm || nf.reduce((a, x) => a + x.m, 0);
+    if (nf.length && nf.length < 40) return { lista: ordM(nf), tot: totNf };   // lista completa do coletor
+    if (!temRota || !(s.gps || []).length) return nf.length || s.nfm ? { lista: ordM(nf), tot: totNf } : null;
+    const r = porRota(s, R, true);
+    if (!nf.length) return { lista: ordM(r.lista), tot: r.tot };
+    const vis = new Set(nf.map(x => x.r + '|' + x.b));   // dias antigos: o coletor guardava só as 40 maiores; completa com a rota × GPS
+    return { lista: ordM(nf.concat(r.lista.filter(x => !vis.has(x.r + '|' + x.b)))), tot: totNf || r.tot };
   }
 
-  // ------------------------------------------------------------ mapa
-  function mapa(S) {
-    const P = S.filter(s => (s.ring || []).length);
+  // ------------------------------------------------------------ mapa (setores do turno em cor; os demais em cinza claro)
+  function mapa(S, todos, rot = true) {
+    const P = todos.filter(s => (s.ring || []).length), dest = new Set(S.map(s => s.s));
     const pts = P.flatMap(s => s.ring.flat());
-    if (!pts.length) return '';
+    if (!pts.length || !S.some(s => (s.ring || []).length)) return '';
     const la0 = Math.min(...pts.map(p => p[0])), la1 = Math.max(...pts.map(p => p[0]));
     const lo0 = Math.min(...pts.map(p => p[1])), lo1 = Math.max(...pts.map(p => p[1]));
     const k = Math.cos((la0 + la1) / 2 * Math.PI / 180), W = 700, H = 380, pad = 12;
     const sx = (W - 2 * pad) / Math.max(1e-6, (lo1 - lo0) * k), sy = (H - 2 * pad) / Math.max(1e-6, la1 - la0), sc = Math.min(sx, sy);
     const ox = (W - (lo1 - lo0) * k * sc) / 2, oy = (H - (la1 - la0) * sc) / 2;
     const X = lo => ox + (lo - lo0) * k * sc, Y = la => oy + (la1 - la) * sc;
-    let g = '', t = '';
+    const pol = (r, f, o) => `<polygon points="${r.map(p => X(p[1]).toFixed(1) + ',' + Y(p[0]).toFixed(1)).join(' ')}" fill="${f}" fill-opacity="${o}" stroke="#fff" stroke-width="1.4"/>`;
+    let g0 = '', g = '', t = '';
     P.forEach(s => {
-      s.ring.forEach(r => { g += `<polygon points="${r.map(p => X(p[1]).toFixed(1) + ',' + Y(p[0]).toFixed(1)).join(' ')}" fill="${cor(s)}" fill-opacity=".75" stroke="#fff" stroke-width="1.4"/>`; });
+      if (!dest.has(s.s)) { s.ring.forEach(r => { g0 += `<polygon points="${r.map(p => X(p[1]).toFixed(1) + ',' + Y(p[0]).toFixed(1)).join(' ')}" fill="#fff" fill-opacity=".55" stroke="#b4beb8" stroke-width=".8"/>`; }); return; }
+      s.ring.forEach(r => { g += pol(r, cor(s), '.8'); });
       const r0 = s.ring.reduce((a, r) => r.length > a.length ? r : a, []);
       const cx = X(r0.reduce((a, p) => a + p[1], 0) / r0.length), cy = Y(r0.reduce((a, p) => a + p[0], 0) / r0.length);
       const lx = r0.map(p => X(p[1])), ly = r0.map(p => Y(p[0])), grande = Math.max(...lx) - Math.min(...lx) > 46 && Math.max(...ly) - Math.min(...ly) > 30;
-      t += `<text x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" text-anchor="middle" font-size="${grande ? 11 : 9}" font-weight="700" fill="#14231c" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(s.s)}${grande ? `<tspan x="${cx.toFixed(1)}" dy="12" font-size="10" font-weight="600">${saiu(s) ? n0(pg(s)) + '%' : '—'}</tspan>` : ''}</text>`;
+      if (rot) t += `<text x="${cx.toFixed(1)}" y="${cy.toFixed(1)}" text-anchor="middle" font-size="${grande ? 11 : 9}" font-weight="700" fill="#14231c" stroke="#fff" stroke-width="3" paint-order="stroke">${esc(s.s)}${grande ? `<tspan x="${cx.toFixed(1)}" dy="12" font-size="10" font-weight="600">${saiu(s) ? n0(pg(s)) + '%' : '—'}</tspan>` : ''}</text>`;
     });
-    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:#f3f6f4;border-radius:6px">${g}${t}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:#f3f6f4;border-radius:6px">${g0}${g}${t}</svg>`;
+  }
+  const LEG = `<div class="lg"><span><i style="background:#4fb37f"></i>90% ou mais</span><span><i style="background:#e9b44c"></i>70 a 89%</span><span><i style="background:#e06b62"></i>abaixo de 70%</span><span><i style="background:#6f95e8"></i>só GPS</span><span><i style="background:#c9d0cc"></i>não saiu</span><span><i style="background:#fff;box-shadow:inset 0 0 0 1px #b4beb8"></i>outro turno</span></div>`;
+
+  // ------------------------------------------------------------ números de um conjunto de setores
+  function numeros(S, T, RS, jor) {
+    const F = S.filter(saiu), naos = S.filter(s => !saiu(s));
+    const med = F.length ? F.reduce((a, s) => a + s.pct, 0) / F.length : null;
+    const comG = F.filter(s => s.pgps != null), medg = comG.length ? comG.reduce((a, s) => a + s.pgps, 0) / comG.length : null;
+    const ex = S.map(s => ({ s, e: extra(s, T, jor) })).filter(x => x.e), hes = ex.filter(x => x.e.he > 0);
+    const heTot = hes.reduce((a, x) => a + x.e.he, 0);
+    const r = s => RS[s.s] || {};
+    const semF = F.reduce((a, s) => a + (r(s).tot || 0), 0), semN = naos.reduce((a, s) => a + (r(s).tot || 0), 0);
+    const ruas = S.reduce((a, s) => a + (r(s).lista || []).length, 0);
+    return { F, naos, med, medg, conc: F.filter(s => pg(s) >= 90), baixo: F.filter(s => pg(s) < 70), inc: S.filter(enc), ex, hes, heTot, heMed: ex.length ? heTot / ex.length : null, semF, semN, semTot: semF + semN, ruas };
+  }
+  const kpi = (v, l, c) => `<div class="k"><b${c ? ` style="color:${c}"` : ''}>${v}</b><span>${l}</span></div>`;
+  function cartoes(N, fechado, T) {
+    const heL = T && T.ini != null ? `hora extra média por setor (fora de ${expTxt(T)})` : 'hora extra média por setor';
+    return `<div class="kp">
+      ${kpi(N.med == null ? '—' : n0(N.med) + '%', 'conclusão média (INLOG)', N.med == null ? null : N.med >= 90 ? '#1d7a4f' : N.med >= 70 ? '#a86f00' : '#c9302c')}
+      ${kpi(N.medg == null ? '—' : n0(N.medg) + '%', 'conclusão média (GPS)', '#2a5bd7')}
+      ${kpi(`${N.conc.length}<small> de ${N.F.length}</small>`, 'setores com 90% ou mais')}
+      ${kpi(N.baixo.length, 'setores abaixo de 70%', N.baixo.length ? '#c9302c' : null)}
+      ${kpi(N.inc.length, 'encerrados sem concluir', N.inc.length ? '#c9302c' : null)}
+      ${kpi(N.naos.length, fechado ? 'setores que não saíram' : 'aguardando saída', N.naos.length && fechado ? '#c9302c' : null)}
+      ${kpi(N.heMed == null ? '—' : hmin(N.heMed), `${heL}${N.hes.length ? ` · total ${hmin(N.heTot)}` : ''}`, N.heMed ? '#a86f00' : null)}
+      ${kpi(N.semTot ? km(N.semTot) : '—', `de rota sem coleta${N.ruas ? ` · ${N.ruas} ${pl(N.ruas, 'rua', 'ruas')}` : ''}`, N.semTot ? '#c9302c' : null)}
+    </div>`;
+  }
+
+  // ------------------------------------------------------------ seção de um turno (cartões, mapa, destaques, setores, ruas)
+  function secao(T, D, RS, todos, comCartoes) {
+    const S = T.S, jor = D.jornada || 440, N = numeros(S, T, RS, jor), fechado = T.fechado, B = [];
+    if (comCartoes) B.push({ html: cartoes(N, fechado, T) });
+    const mp = mapa(S, todos);
+    if (mp) B.push({ html: `<h2>${fechado ? 'Como o turno encerrou' : 'Como está o turno (até ' + esc(D.at) + ')'}</h2>${mp}${LEG}` });
+    // destaques
+    const li = [];
+    if (fechado && N.naos.length) li.push(`<b>${N.naos.length} ${pl(N.naos.length, 'setor não saiu', 'setores não saíram')}:</b> ${N.naos.map(s => esc(s.s)).join(', ')}${N.semN ? ` (${km(N.semN)} de rota sem coleta)` : ''}.`);
+    if (N.inc.length) li.push(`<b>${N.inc.length} ${pl(N.inc.length, 'encerrado', 'encerrados')} sem concluir:</b> ${N.inc.map(s => `${esc(s.s)} (${n0(s.pct)}%${depois(s) ? ', ' + esc(depois(s)) : ''})`).join('; ')}.`);
+    const ap = S.filter(s => s.sit === 'EXECUTADO' && s.pct < 90 && !enc(s) && s.pe);
+    if (ap.length) li.push(`<b>Fechados abaixo de 90% com justificativa no GPS:</b> ${ap.map(s => `${esc(s.s)} (${n0(s.pct)}%, ${esc(depois(s))})`).join('; ')}.`);
+    if (N.baixo.length) li.push(`<b>Abaixo de 70%:</b> ${N.baixo.slice().sort((a, b) => pg(a) - pg(b)).map(s => `${esc(s.s)} (${n0(pg(s))}%)`).join(', ')}.`);
+    const gpsSo = S.filter(s => s.sit === 'GPS');
+    if (gpsSo.length) li.push(`<b>Coletados sem registro na INLOG (só GPS):</b> ${gpsSo.map(s => `${esc(s.s)} (${n0(s.pgps || 0)}%)`).join(', ')}.`);
+    if (N.hes.length) {
+      const top = N.hes.slice().sort((a, b) => b.e.he - a.e.he).slice(0, 4).map(x => `${esc(x.s.s)} (${hmin(x.e.he)})`).join(', ');
+      li.push(T.ini != null
+        ? `<b>Hora extra:</b> ${N.hes.length} ${pl(N.hes.length, 'setor trabalhou', 'setores trabalharam')} fora do expediente de ${expTxt(T)}, somando ${hmin(N.heTot)}; maiores: ${top}.`
+        : `<b>Hora extra:</b> ${N.hes.length} ${pl(N.hes.length, 'setor passou', 'setores passaram')} da jornada de ${hmin(jor)}, somando ${hmin(N.heTot)}; maiores: ${top}.`);
+    }
+    if (N.semTot) {
+      const top = S.filter(saiu).map(s => ({ s: s.s, t: (RS[s.s] || {}).tot || 0 })).filter(x => x.t > 0).sort((a, b) => b.t - a.t).slice(0, 4);
+      li.push(`<b>Rota sem coleta:</b> ${km(N.semTot)} da rota programada ficaram sem passagem do caminhão${N.semN ? ` (${km(N.semF)} nos setores que saíram e ${km(N.semN)} nos que não saíram)` : ''}${top.length ? `; mais em ${top.map(x => `${esc(x.s)} (${km(x.t)})`).join(', ')}` : ''}.`);
+    }
+    if (!li.length) li.push(fechado ? 'Todos os setores programados saíram e foram concluídos.' : 'Turno em andamento: sem ocorrências até agora.');
+    B.push({ lista: true, tit: '<h2>Destaques</h2>', itens: li });
+    // setores
+    const cab = '<tr><th>Setor</th><th>Veículo</th><th class="n">INLOG</th><th class="n">GPS</th><th>Situação</th><th class="n">Saída – retorno</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>';
+    const linhas = S.map(s => {
+      const e = extra(s, T, jor), r = RS[s.s];
+      return `<tr><td><i style="background:${cor(s)}"></i><b>${esc(s.s)}</b></td><td>${esc((s.veic || []).join(', ') || '—')}</td>
+        <td class="n">${saiu(s) ? n0(s.pct) + '%' : '—'}</td><td class="n">${s.pgps != null ? n0(s.pgps) + '%' : '—'}</td><td>${esc(situ(s))}</td>
+        <td class="n">${s.saida || s.volta ? (s.saida || '—') + ' – ' + (s.volta || '—') : '—'}</td>
+        <td class="n">${e ? (e.he ? '<b style="color:#a86f00">' + hmin(e.he) + '</b>' : '0') : '—'}</td>
+        <td class="n">${r && r.tot ? km(r.tot) : '—'}</td></tr>`;
+    });
+    const heObs = T.ini != null ? `Hora extra: tempo fora da garagem antes das ${hora(T.ini)} ou depois das ${hora(T.fim)} (expediente do turno).` : `Hora extra: tempo entre a saída e o retorno à garagem além da jornada de ${hmin(jor)}.`;
+    B.push({ tab: true, tit: '<h2>Setores</h2>', cab, linhas, pos: `<div class="ob">INLOG: percentual registrado no sistema. GPS: parte da rota programada por onde o caminhão passou. ${heObs} Sem coleta: extensão da rota programada sem passagem do caminhão.</div>` });
+    // ruas sem coleta: todas, por setor
+    const L2 = [];
+    S.forEach(s => {
+      const r = RS[s.s];
+      if (!r || !(r.tot || (r.lista || []).length)) return;
+      const l = r.lista || [];
+      const desc = r.ns ? 'não saiu · rota inteira sem coleta' : `${esc(situ(s))} · ${n0(pg(s))}%`;
+      L2.push(`<tr class="gh"><td colspan="3"><i style="background:${cor(s)}"></i><b>Setor ${esc(s.s)}</b> · ${desc} · ${l.length ? `${l.length} ${pl(l.length, 'rua', 'ruas')} · ` : ''}${km(r.tot)}</td></tr>`);
+      if (!l.length) L2.push('<tr><td colspan="3" class="mais">Ruas não identificadas: cadastro de ruas da cidade indisponível.</td></tr>');
+      l.forEach(x => L2.push(`<tr><td>${esc(x.r)}</td><td>${esc(x.b || '—')}</td><td class="n">${n0(x.m)} m</td></tr>`));
+    });
+    if (L2.length) B.push({ tab: true, tit: '<h2>Ruas que ficaram sem coleta</h2><div class="ob" style="margin:-2px 0 6px">Todas as ruas da rota programada com 40 m ou mais sem passagem do caminhão (a mais de 25 m do rastreio GPS), por setor. Setores encerrados; os que não saíram entram com a rota inteira.</div>', cab: '<tr><th>Rua</th><th>Bairro</th><th class="n">Extensão sem coleta</th></tr>', linhas: L2 });
+    else if (fechado) B.push({ html: '<h2>Ruas que ficaram sem coleta</h2><div class="ob">Nenhum trecho da rota programada ficou sem passagem do caminhão nos setores encerrados.</div>' });
+    return B;
   }
 
   // ------------------------------------------------------------ conteúdo em blocos (para paginar)
-  function blocos(D, CX, RS) {
-    const S = [...D.S].sort((a, b) => String(a.s).localeCompare(String(b.s), 'pt-BR', { numeric: true }));
-    const jor = D.jornada || 440, fechado = D.at === 'final';
-    const F = S.filter(saiu), naos = S.filter(s => !saiu(s));
-    const med = F.length ? F.reduce((a, s) => a + s.pct, 0) / F.length : 0;
-    const comG = F.filter(s => s.pgps != null), medg = comG.length ? comG.reduce((a, s) => a + s.pgps, 0) / comG.length : null;
-    const conc = F.filter(s => pg(s) >= 90), baixo = F.filter(s => pg(s) < 70), inc = S.filter(enc);
-    const ex = S.map(s => ({ s, e: extra(s, jor) })).filter(x => x.e), hes = ex.filter(x => x.e.he > 0);
-    const heTot = hes.reduce((a, x) => a + x.e.he, 0), heMed = ex.length ? heTot / ex.length : null;
-    const kmr = S.reduce((a, s) => a + (s.dist || 0), 0);
-    const semTot = S.reduce((a, s) => a + ((RS[s.s] || {}).tot || 0), 0);
-    const ruas = S.flatMap(s => ((RS[s.s] || {}).lista || []).map(r => ({ ...r, s: s.s })));
-    const [y, mo, da] = D.dia.split('-'), wd = WD[new Date(+y, mo - 1, +da).getDay()];
+  function blocos(D, CX, RS, GR, sel) {
+    const [y, mo, da] = D.dia.split('-'), wd = WD[new Date(+y, mo - 1, +da).getDay()], data = `${da}/${mo}/${y}`;
     const agora = new Date(), p2 = v => String(v).padStart(2, '0');
     const ger = `${p2(agora.getDate())}/${p2(agora.getMonth() + 1)}/${agora.getFullYear()} ${p2(agora.getHours())}:${p2(agora.getMinutes())}`;
-    const B = [];
-    const kpi = (v, l, c) => `<div class="k"><b${c ? ` style="color:${c}"` : ''}>${v}</b><span>${l}</span></div>`;
+    const todos = D.S, jor = D.jornada || 440, fechadoDia = D.at === 'final', B = [];
+    const estado = T => fechadoDia ? 'dia encerrado' : T && T.fechado ? 'turno encerrado' : 'parcial até ' + esc(D.at);
+    const fonte = { html: `<div class="ft">Fonte: INLOG (setores e rastreamento GPS dos caminhões) · Torre de Controle · torrelimpagyn.github.io/trindade-coleta</div>` };
+    const T1 = GR.find(T => T.k === sel);
+    if (T1) {   // um turno só
+      B.push({ html: `<div class="tag">Planejamento e Controle</div><h1>Fechamento da coleta domiciliar</h1><div class="cid">${esc(CX.n)}</div>
+        <div class="tno">${esc(nomeT(T1))}${T1.ini != null ? ` <small>expediente ${expTxt(T1)}</small>` : ''}</div>
+        <div class="sub">${wd}, ${data} · ${estado(T1)} · emitido em ${ger}</div>` });
+      secao(T1, D, RS, todos, true).forEach(b => B.push(b));
+      B.push(fonte);
+      return B;
+    }
+    // dia completo: resumo por turno e uma seção por turno
     B.push({ html: `<div class="tag">Planejamento e Controle</div><h1>Fechamento da coleta domiciliar</h1><div class="cid">${esc(CX.n)}</div>
-      <div class="sub">${wd}, ${da}/${mo}/${y} · ${fechado ? 'dia encerrado' : 'parcial até ' + esc(D.at)} · emitido em ${ger}</div>` });
-    B.push({ html: `<div class="kp">
-      ${kpi(n0(med) + '%', 'conclusão média (INLOG)', med >= 90 ? '#1d7a4f' : med >= 70 ? '#a86f00' : '#c9302c')}
-      ${kpi(medg == null ? '—' : n0(medg) + '%', 'conclusão média (GPS)', '#2a5bd7')}
-      ${kpi(`${conc.length}<small> de ${F.length}</small>`, 'setores com 90% ou mais')}
-      ${kpi(baixo.length, 'setores abaixo de 70%', baixo.length ? '#c9302c' : null)}
-      ${kpi(inc.length, 'encerrados sem concluir', inc.length ? '#c9302c' : null)}
-      ${kpi(naos.length, fechado ? 'setores que não saíram' : 'aguardando saída', naos.length && fechado ? '#c9302c' : null)}
-      ${kpi(heMed == null ? '—' : hmin(heMed), `hora extra média por setor${hes.length ? ` · total ${hmin(heTot)}` : ''}`, heMed ? '#a86f00' : null)}
-      ${kpi(semTot ? km(semTot) : '—', `de rota sem coleta${ruas.length ? ` · ${ruas.length} rua${ruas.length > 1 ? 's' : ''}` : ''}`, semTot ? '#c9302c' : null)}
-    </div>` });
-    B.push({ html: `<h2>Como a cidade encerrou</h2>${mapa(S)}<div class="lg"><span><i style="background:#4fb37f"></i>90% ou mais</span><span><i style="background:#e9b44c"></i>70 a 89%</span><span><i style="background:#e06b62"></i>abaixo de 70%</span><span><i style="background:#6f95e8"></i>só GPS</span><span><i style="background:#c9d0cc"></i>não saiu</span></div>` });
-    // destaques
-    const li = [];
-    if (fechado && naos.length) li.push(`<b>${naos.length} setor${naos.length > 1 ? 'es' : ''} não ${naos.length > 1 ? 'saíram' : 'saiu'}:</b> ${naos.map(s => esc(s.s)).join(', ')}.`);
-    if (inc.length) li.push(`<b>${inc.length} encerrado${inc.length > 1 ? 's' : ''} sem concluir:</b> ${inc.map(s => `${esc(s.s)} (${n0(s.pct)}%${depois(s) ? ', ' + esc(depois(s)) : ''})`).join('; ')}.`);
-    const ap = S.filter(s => s.sit === 'EXECUTADO' && s.pct < 90 && !enc(s) && s.pe);
-    if (ap.length) li.push(`<b>Fechados abaixo de 90% com justificativa no GPS:</b> ${ap.map(s => `${esc(s.s)} (${n0(s.pct)}%, ${esc(depois(s))})`).join('; ')}.`);
-    if (baixo.length) li.push(`<b>Abaixo de 70%:</b> ${baixo.sort((a, b) => pg(a) - pg(b)).map(s => `${esc(s.s)} (${n0(pg(s))}%)`).join(', ')}.`);
-    const gpsSo = S.filter(s => s.sit === 'GPS');
-    if (gpsSo.length) li.push(`<b>Coletados sem registro na INLOG (só GPS):</b> ${gpsSo.map(s => `${esc(s.s)} (${n0(s.pgps || 0)}%)`).join(', ')}.`);
-    if (hes.length) li.push(`<b>Hora extra:</b> ${hes.length} setor${hes.length > 1 ? 'es' : ''} passaram da jornada de ${hmin(jor)}, somando ${hmin(heTot)}; maiores: ${hes.sort((a, b) => b.e.he - a.e.he).slice(0, 4).map(x => `${esc(x.s.s)} (${hmin(x.e.he)})`).join(', ')}.`);
-    if (semTot) {
-      const top = S.map(s => ({ s: s.s, t: (RS[s.s] || {}).tot || 0 })).filter(x => x.t > 0).sort((a, b) => b.t - a.t).slice(0, 4);
-      li.push(`<b>Rota sem coleta:</b> ${km(semTot)} da rota programada ficaram sem passagem do caminhão${top.length ? `; mais em ${top.map(x => `${esc(x.s)} (${km(x.t)})`).join(', ')}` : ''}.`);
-    }
-    if (!li.length) li.push('Todos os setores programados saíram e foram concluídos.');
-    B.push({ lista: true, tit: '<h2>Destaques do dia</h2>', itens: li });
-    // tabela de setores
-    const cab = '<tr><th>Setor</th><th>Veículo</th><th class="n">INLOG</th><th class="n">GPS</th><th>Situação</th><th class="n">Saída – retorno</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>';
-    const linhas = [];
-    const turnos = [...new Set(S.map(s => s.turno || 'OUTROS'))];
-    turnos.forEach(t => {
-      const L = S.filter(s => (s.turno || 'OUTROS') === t);
-      if (turnos.length > 1) linhas.push(`<tr class="tt"><td colspan="8">${esc(tlab(t))} · ${L.length} setor${L.length > 1 ? 'es' : ''}</td></tr>`);
-      L.forEach(s => {
-        const e = extra(s, jor), r = RS[s.s];
-        linhas.push(`<tr><td><i style="background:${cor(s)}"></i><b>${esc(s.s)}</b></td><td>${esc((s.veic || []).join(', ') || '—')}</td>
-          <td class="n">${saiu(s) ? n0(s.pct) + '%' : '—'}</td><td class="n">${s.pgps != null ? n0(s.pgps) + '%' : '—'}</td><td>${esc(situ(s))}</td>
-          <td class="n">${s.saida || s.volta ? (s.saida || '—') + ' – ' + (s.volta || '—') : '—'}</td>
-          <td class="n">${e ? (e.he ? '<b style="color:#a86f00">' + hmin(e.he) + '</b>' : '0') : '—'}</td>
-          <td class="n">${r && r.tot ? km(r.tot) : '—'}</td></tr>`);
-      });
+      <div class="sub">${wd}, ${data} · ${estado(null)} · emitido em ${ger}</div>` });
+    const ND = numeros(todos, null, RS, jor);
+    ND.ex = []; ND.hes = []; ND.heTot = 0;
+    GR.forEach(T => { const N = numeros(T.S, T, RS, jor); ND.ex.push(...N.ex); ND.hes.push(...N.hes); ND.heTot += N.heTot; T.N = N; });
+    ND.heMed = ND.ex.length ? ND.heTot / ND.ex.length : null;
+    B.push({ html: `<h2>O dia na cidade</h2>${cartoes(ND, fechadoDia, null)}` });
+    const pc = v => v == null ? '—' : n0(v) + '%';
+    const lin = GR.map(T => { const N = T.N; return `<tr><td><b>${esc(T.n)}</b>${T.ini != null ? `<br><small>${expTxt(T)}</small>` : ''}</td><td class="n">${T.S.length}</td><td class="n">${N.naos.length || '—'}</td>
+      <td class="n">${pc(N.med)}</td><td class="n">${pc(N.medg)}</td><td class="n">${N.conc.length}</td><td class="n">${N.baixo.length || '—'}</td><td class="n">${N.inc.length || '—'}</td>
+      <td class="n">${N.hes.length ? `<b style="color:#a86f00">${hmin(N.heTot)}</b><br><small>${N.hes.length} ${pl(N.hes.length, 'setor', 'setores')}</small>` : '0'}</td><td class="n">${N.semTot ? `${km(N.semTot)}${N.ruas ? `<br><small>${N.ruas} ${pl(N.ruas, 'rua', 'ruas')}</small>` : ''}` : '—'}</td></tr>`; });
+    if (GR.length > 1) lin.push(`<tr class="tt"><td>Dia</td><td class="n">${todos.length}</td><td class="n">${ND.naos.length || '—'}</td><td class="n">${pc(ND.med)}</td><td class="n">${pc(ND.medg)}</td><td class="n">${ND.conc.length}</td><td class="n">${ND.baixo.length || '—'}</td><td class="n">${ND.inc.length || '—'}</td><td class="n">${ND.hes.length ? hmin(ND.heTot) : '0'}</td><td class="n">${ND.semTot ? km(ND.semTot) : '—'}</td></tr>`);
+    B.push({ tab: true, tit: '<h2>Fechamento por turno</h2>', cab: '<tr><th>Turno</th><th class="n">Setores</th><th class="n">Não saíram</th><th class="n">INLOG</th><th class="n">GPS</th><th class="n">≥ 90%</th><th class="n">&lt; 70%</th><th class="n">Sem concluir</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>', linhas: lin,
+      pos: `<div class="ob">INLOG e GPS: conclusão média dos setores que saíram. Sem concluir: setores encerrados abaixo de 90% sem justificativa no GPS. ${EXP[CX.s] ? 'O turno de cada setor vem do horário em que o caminhão trabalhou, comparado com o expediente; hora extra é o tempo fora do expediente.' : `Hora extra: além da jornada de ${hmin(jor)}.`} O detalhe de cada turno, com todas as ruas sem coleta, está nas páginas seguintes.</div>` });
+    const mini = GR.filter(T => T.k !== 'X').map(T => { const m = mapa(T.S, todos, false); return m ? `<div><div class="mc"><b>${esc(T.n)}</b>${T.ini != null ? ' · ' + expTxt(T) : ''} · ${T.N.med == null ? '—' : n0(T.N.med) + '%'} na INLOG</div>${m}</div>` : ''; }).filter(Boolean);
+    if (mini.length > 1) B.push({ html: `<h2>Como cada turno encerrou</h2><div class="mm">${mini.join('')}</div>${LEG}` });
+    GR.forEach(T => {
+      B.push({ quebra: true, ctx: nomeT(T) });
+      B.push({ html: `<div class="tsec"><div class="tag">Fechamento por turno</div><div class="tno">${esc(nomeT(T))}${T.ini != null ? ` <small>expediente ${expTxt(T)}</small>` : ''}</div><div class="sub">${esc(CX.n)} · ${wd}, ${data} · ${estado(T)}</div></div>` });
+      B.push({ html: cartoes(T.N, T.fechado, T) });
+      secao(T, D, RS, todos, false).forEach(b => B.push(b));
     });
-    B.push({ tab: true, tit: '<h2>Setores</h2>', cab, linhas, pos: `<div class="ob">INLOG: percentual registrado no sistema. GPS: parte da rota programada por onde o caminhão passou. Hora extra: tempo entre a saída e o retorno à garagem além da jornada de ${hmin(jor)}. Sem coleta: extensão da rota programada sem passagem do caminhão.</div>` });
-    // ruas sem coleta
-    if (ruas.length) {
-      const L2 = [];
-      S.forEach(s => {
-        const l = (RS[s.s] || {}).lista || [];
-        if (!l.length) return;
-        l.slice(0, 15).forEach((r, i) => L2.push(`<tr${i === 0 ? ' class="g1"' : ''}><td>${i === 0 ? '<b>' + esc(s.s) + '</b>' : '<span style="color:#9a9a94">' + esc(s.s) + '</span>'}</td><td>${esc(r.r)}</td><td>${esc(r.b || '—')}</td><td class="n">${n0(r.m)} m</td></tr>`));
-        if (l.length > 15) L2.push(`<tr><td></td><td colspan="3" class="mais">+ ${l.length - 15} rua${l.length - 15 > 1 ? 's' : ''} com trechos menores (${km(l.slice(15).reduce((a, r) => a + r.m, 0))})</td></tr>`);
-      });
-      B.push({ tab: true, tit: '<h2>Ruas que ficaram sem coleta</h2><div class="ob" style="margin:-2px 0 6px">Trechos da rota programada de cada setor por onde o caminhão não passou (a mais de 25 m do rastreio GPS), agrupados por rua. Só setores já encerrados.</div>',
-        cab: '<tr><th>Setor</th><th>Rua</th><th>Bairro</th><th class="n">Extensão sem coleta</th></tr>', linhas: L2 });
-    } else if (semTot === 0 && fechado) {
-      B.push({ html: '<h2>Ruas que ficaram sem coleta</h2><div class="ob">Nenhum trecho da rota programada ficou sem passagem do caminhão nos setores encerrados.</div>' });
-    }
-    B.push({ html: `<div class="ft">Fonte: INLOG (setores e rastreamento GPS dos caminhões) · Torre de Controle · torrelimpagyn.github.io/trindade-coleta</div>` });
+    B.push(fonte);
     return B;
   }
 
@@ -249,16 +367,18 @@
   const ALT = 865;   // altura útil: de 16 mm do topo até acima da logo
   function folha(ctx, n) {
     const f = document.createElement('div'); f.className = 'folha';
-    f.innerHTML = `<i class="tb"></i><img class="lgq" src="${LOGO}" alt="Quebec Ambiental">${n > 1 ? `<div class="rh">Fechamento da coleta · ${esc(ctx)}</div>` : ''}<div class="ct"></div><div class="pn"></div>`;
+    f.innerHTML = `<i class="tb"></i><img class="lgq" src="${LOGO}" alt="Quebec Ambiental">${n > 1 ? `<div class="rh">${esc(ctx)}</div>` : ''}<div class="ct"></div><div class="pn"></div>`;
     return f;
   }
-  function paginar(B, alvo, ctx) {
+  function paginar(B, alvo, ctx0) {
     const P = [];
-    let f, ct;
+    let f, ct, ctx = ctx0;
     const nova = () => { f = folha(ctx, P.length + 1); alvo.appendChild(f); P.push(f); ct = f.querySelector('.ct'); };
     const cabe = () => ct.scrollHeight <= ALT + 1;
+    const cont = h => h.replace(/<\/h2>/, ' <small>(continuação)</small></h2>').replace(/<div class="ob"[\s\S]*$/, '');
     nova();
     for (const b of B) {
+      if (b.quebra) { if (b.ctx) ctx = ctx0 + ' · ' + b.ctx; if (ct.children.length) nova(); continue; }
       if (b.lista) {   // lista de destaques: quebra entre itens
         const tit = document.createElement('div'); tit.className = 'bl'; tit.innerHTML = b.tit; ct.appendChild(tit);
         let ul = document.createElement('ul'); ul.className = 'dq'; ct.appendChild(ul);
@@ -268,7 +388,7 @@
           if (cabe()) continue;
           ul.lastElementChild.remove(); ni--;
           if (ni === 0) { tit.remove(); ul.remove(); nova(); ct.appendChild(tit); ct.appendChild(ul); }
-          else { nova(); const c = document.createElement('div'); c.className = 'bl cont'; c.innerHTML = b.tit.replace(/<\/h2>/, ' <small>(continuação)</small></h2>'); ct.appendChild(c); ul = document.createElement('ul'); ul.className = 'dq'; ct.appendChild(ul); }
+          else { nova(); const c = document.createElement('div'); c.className = 'bl cont'; c.innerHTML = cont(b.tit); ct.appendChild(c); ul = document.createElement('ul'); ul.className = 'dq'; ct.appendChild(ul); }
           ul.insertAdjacentHTML('beforeend', `<li>${x}</li>`); ni = 1;
         }
         continue;
@@ -278,23 +398,29 @@
         if (!cabe() && ct.children.length > 1) { d.remove(); nova(); ct.appendChild(d); }
         continue;
       }
-      let tit = document.createElement('div'); tit.className = 'bl'; tit.innerHTML = b.tit; ct.appendChild(tit);
+      // tabela: quebra entre linhas, repete o cabeçalho e o grupo (setor) na folha seguinte
+      const tit = document.createElement('div'); tit.className = 'bl'; tit.innerHTML = b.tit; ct.appendChild(tit);
       let t = document.createElement('table'); t.innerHTML = `<thead>${b.cab}</thead><tbody></tbody>`; ct.appendChild(t);
-      let tb = t.tBodies[0], nr = 0;
+      let tb = t.tBodies[0], nr = 0, gh = null;
       for (const l of b.linhas) {
+        const eGh = l.startsWith('<tr class="gh"');
         tb.insertAdjacentHTML('beforeend', l); nr++;
-        if (!cabe()) {
-          tb.lastElementChild.remove(); nr--;
-          if (nr === 0) { tit.remove(); t.remove(); }
-          nova();
-          if (nr === 0) { ct.appendChild(tit); }
-          else { const c = document.createElement('div'); c.className = 'bl cont'; c.innerHTML = b.tit.replace(/<\/h2>/, ' <small>(continuação)</small></h2>').replace(/<div class="ob"[\s\S]*$/, ''); ct.appendChild(c); }
-          t = document.createElement('table'); t.innerHTML = `<thead>${b.cab}</thead><tbody></tbody>`; ct.appendChild(t);
-          tb = t.tBodies[0]; tb.insertAdjacentHTML('beforeend', l); nr = 1;
-        }
+        if (cabe()) { if (eGh) gh = l; continue; }
+        tb.lastElementChild.remove(); nr--;
+        const leva = [];
+        if (!eGh && nr > 0 && tb.lastElementChild && tb.lastElementChild.classList.contains('gh')) { leva.push(tb.lastElementChild.outerHTML); tb.lastElementChild.remove(); nr--; }
+        if (nr === 0) { tit.remove(); t.remove(); nova(); ct.appendChild(tit); }
+        else { nova(); const c = document.createElement('div'); c.className = 'bl cont'; c.innerHTML = cont(b.tit); ct.appendChild(c); }
+        t = document.createElement('table'); t.innerHTML = `<thead>${b.cab}</thead><tbody></tbody>`; ct.appendChild(t);
+        tb = t.tBodies[0];
+        if (!eGh && !leva.length && gh) leva.push(gh.replace(/<\/td><\/tr>$/, ' <small>(continuação)</small></td></tr>'));
+        leva.forEach(h => tb.insertAdjacentHTML('beforeend', h));
+        tb.insertAdjacentHTML('beforeend', l); nr = leva.length + 1;
+        if (eGh) gh = l;
       }
       if (b.pos) { const d = document.createElement('div'); d.className = 'bl'; d.innerHTML = b.pos; ct.appendChild(d); if (!cabe()) { d.remove(); nova(); ct.appendChild(d); } }
     }
+    if (!ct.children.length && P.length > 1) { f.remove(); P.pop(); }
     P.forEach((p, i) => { p.querySelector('.pn').textContent = `Página ${i + 1} de ${P.length}`; });
     return P;
   }
@@ -302,6 +428,8 @@
   const CSS = `#rel{position:fixed;inset:0;z-index:60;background:rgba(10,20,15,.94);overflow:auto;-webkit-overflow-scrolling:touch}
 #rel .bar2{position:sticky;top:0;z-index:2;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:#17201b}
 #rel .bar2 button{border:0;border-radius:999px;padding:9px 14px;font:inherit;font-weight:700;font-size:14px;background:#2f6b52;color:#fff}#rel .bar2 button.sec2{background:#e9f1ec;color:#14231c}
+#rel .tur{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;width:100%;align-items:center;color:#cfe3d8;font-size:13px}
+#rel .tur button{background:transparent;border:1.5px solid #5d8f77;color:#e9f1ec;padding:6px 12px;font-size:13px}#rel .tur button.on{background:${VERDE};border-color:${VERDE};color:#14231c}
 #rel .msg{color:#cfe3d8;text-align:center;font-size:13px;padding:6px 10px 0}
 #rel .esc{padding:14px 0 40px}
 #rel .pgs{display:flex;flex-direction:column;align-items:center;gap:14px;background:transparent}
@@ -314,14 +442,18 @@
 .folha .tag{display:inline-block;background:${ESC};color:#fff;font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:3px;margin-bottom:9px}
 .folha h1{margin:0;font-size:22px;line-height:1.15;color:${ESC}}
 .folha .cid{font-size:27px;font-weight:700;line-height:1.15;color:${ESC};margin:2px 0 3px}
+.folha .tno{font-size:21px;font-weight:700;line-height:1.2;color:#1d1d1b;margin:4px 0 2px;padding-left:10px;border-left:5px solid ${VERDE}}.folha .tno small{font-size:13px;font-weight:400;color:#52514e;margin-left:6px}
+.folha .tsec .tno{font-size:24px}
 .folha .sub{color:#52514e;font-size:12.5px;margin-bottom:12px}
+.folha .mm{display:grid;grid-template-columns:1fr 1fr;gap:10px}.folha .mc{font-size:11.5px;color:#52514e;margin-bottom:3px}.folha .mc b{color:#1d1d1b}
 .folha h2{font-size:15px;color:${ESC};margin:14px 0 7px}.folha h2 small{font-size:11px;color:#7a7a74;font-weight:400}
 .folha .kp{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
 .folha .k{background:#f4f4f1;border-radius:5px;padding:7px 9px}.folha .k b{display:block;font-size:19px;line-height:1.15}.folha .k b small{font-size:12px;color:#52514e;font-weight:400}.folha .k span{display:block;font-size:10.5px;color:#52514e;line-height:1.25;margin-top:2px}
 .folha .dq{margin:0;padding-left:17px}.folha .dq li{margin:0 0 4px}
 .folha .lg{display:flex;flex-wrap:wrap;gap:12px;font-size:10.5px;color:#52514e;margin-top:6px}.folha .lg i,.folha td i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 .folha table{width:100%;border-collapse:collapse;font-size:11.2px}.folha th{background:${ESC};color:#fff;text-align:left;font-weight:700;padding:4px 5px;font-size:10.5px}.folha td{border-bottom:.5px solid #deded8;padding:3.5px 5px;vertical-align:top}
-.folha .n{text-align:right;white-space:nowrap}.folha tr.tt td{background:#eef6e6;font-weight:700;color:${ESC}}.folha tr.g1 td{border-top:1px solid #b9c9b0}.folha td.mais{color:#7a7a74;font-style:italic}
+.folha td small{color:#6b6a65;font-size:10px;font-weight:400}
+.folha .n{text-align:right;white-space:nowrap}.folha tr.tt td{background:#eef6e6;font-weight:700;color:${ESC}}.folha tr.gh td{background:#eef6e6;color:${ESC};border-top:1px solid #b9c9b0;padding-top:5px}.folha td.mais{color:#7a7a74;font-style:italic}
 .folha .ob{font-size:10.5px;color:#6b6a65;margin-top:5px}.folha .ft{font-size:10px;color:#7a7a74;margin-top:14px}
 @media print{@page{size:A4;margin:0}html,body{background:#fff!important}body>*:not(#rel){display:none!important}#rel{position:static;background:none;overflow:visible}#rel .bar2,#rel .msg{display:none}#rel .esc{padding:0;zoom:1!important}#rel .pgs{gap:0;display:block}.folha{box-shadow:none;break-after:page;page-break-after:always}.folha:last-child{break-after:auto;page-break-after:auto}}`;
 
@@ -333,7 +465,6 @@
     try { return await h.toBlob(el, { pixelRatio: 2, backgroundColor: '#e9ece9', width: el.offsetWidth, height: el.offsetHeight, skipFonts: true }); }
     finally { es.style.zoom = z; }
   }
-  const nome = (D, CX) => `fechamento-${CX.s}-${D.dia}.png`;
 
   window.relatorio = async function (D, CX) {
     if (!D || !D.S) return;
@@ -341,27 +472,45 @@
     let el = document.getElementById('rel'); if (el) el.remove();
     el = document.createElement('div'); el.id = 'rel';
     const share = !!(navigator.canShare && navigator.canShare({ files: [new File([''], 'x.png', { type: 'image/png' })] }));
-    el.innerHTML = `<div class="bar2"><button id="rlImg">⬇ Baixar imagem</button>${share ? '<button id="rlSh">Compartilhar</button>' : ''}<button id="rlPr" class="sec2">Imprimir / PDF</button><button id="rlX" class="sec2">Fechar</button></div><div class="msg">Preparando o relatório…</div><div class="esc"><div class="pgs"></div></div>`;
+    el.innerHTML = `<div class="bar2"><div class="tur"></div><button id="rlImg">⬇ Baixar imagem</button>${share ? '<button id="rlSh">Compartilhar</button>' : ''}<button id="rlPr" class="sec2">Imprimir / PDF</button><button id="rlX" class="sec2">Fechar</button></div><div class="msg">Preparando o relatório…</div><div class="esc"><div class="pgs"></div></div>`;
     document.body.appendChild(el); document.body.style.overflow = 'hidden';
     const fechar = () => { el.remove(); document.body.style.overflow = ''; window.removeEventListener('resize', ajusta); };
     el.querySelector('#rlX').onclick = fechar;
     const es = el.querySelector('.esc'), pgs = el.querySelector('.pgs');
     const ajusta = () => { es.style.zoom = String(Math.min(1, (el.clientWidth - 16) / 794)); };
     ajusta(); window.addEventListener('resize', ajusta);
-    // ruas sem coleta: setores encerrados (ou dia encerrado)
+    // turnos e ruas sem coleta (setores encerrados; os que não saíram, quando o turno já acabou)
+    const GR = grupos(D, CX);
     const pre = CX.p != null ? CX.p : 'c/' + CX.s + '/';
     const R = await consulta(pre);
     const RS = {};
-    D.S.forEach(s => { if (saiu(s) && (D.at === 'final' || !['ATIVO', 'AGUARDANDO'].includes(s.sit))) { try { const r = semColeta(s, R); if (r) RS[s.s] = r; } catch (e) { } } });
+    GR.forEach(T => T.S.forEach(s => {
+      try {
+        if (saiu(s) && (D.at === 'final' || !['ATIVO', 'AGUARDANDO'].includes(s.sit))) { const r = semColeta(s, R, false); if (r) RS[s.s] = r; }
+        else if (!saiu(s) && T.fechado) { const r = semColeta(s, R, true); if (r) RS[s.s] = r; }
+      } catch (e) { }
+    }));
     const [y, mo, da] = D.dia.split('-');
-    paginar(blocos(D, CX, RS), pgs, `${CX.n} · ${da}/${mo}/${y}`);
+    let sel = GR.length === 1 ? GR[0].k : '';
+    const desenha = () => {
+      pgs.innerHTML = '';
+      paginar(blocos(D, CX, RS, GR, sel), pgs, `Fechamento da coleta · ${CX.n} · ${da}/${mo}/${y}`);
+      el.querySelectorAll('.tur button').forEach(b => b.classList.toggle('on', b.dataset.t === sel));
+      el.scrollTop = 0;
+    };
+    const tur = el.querySelector('.tur');
+    const reais = GR.filter(T => T.k !== 'X');
+    tur.innerHTML = reais.length > 1 ? `<span>Fechamento:</span><button data-t="">Dia completo</button>${reais.map(T => `<button data-t="${esc(T.k)}">${esc(T.n)}${T.ini != null ? ' · ' + expTxt(T) : ''}</button>`).join('')}` : '';
+    tur.querySelectorAll('button').forEach(b => { b.onclick = () => { sel = b.dataset.t; desenha(); }; });
+    desenha();
     el.querySelector('.msg').remove();
+    const nome = () => `fechamento-${CX.s}-${D.dia}${sel ? '-' + slug((GR.find(T => T.k === sel) || {}).n || sel) : ''}.png`;
     el.querySelector('#rlPr').onclick = () => window.print();
     const ocupado = (b, f) => async () => { const t = b.textContent; b.disabled = true; b.textContent = 'Gerando…'; try { await f(); b.textContent = t; } catch (e) { b.textContent = 'Erro ao gerar'; setTimeout(() => { b.textContent = t; }, 4000); } b.disabled = false; };
     const bi = el.querySelector('#rlImg');
-    bi.onclick = ocupado(bi, async () => { const b = await imagem(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nome(D, CX); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); });
+    bi.onclick = ocupado(bi, async () => { const b = await imagem(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nome(); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); });
     const bs = el.querySelector('#rlSh');
-    if (bs) bs.onclick = ocupado(bs, async () => { const b = await imagem(); const f = new File([b], nome(D, CX), { type: 'image/png' }); try { await navigator.share({ files: [f], title: `Fechamento da coleta · ${CX.n}` }); } catch (e) { if (e.name !== 'AbortError') throw e; } });
+    if (bs) bs.onclick = ocupado(bs, async () => { const b = await imagem(); const f = new File([b], nome(), { type: 'image/png' }); try { await navigator.share({ files: [f], title: `Fechamento da coleta · ${CX.n}` }); } catch (e) { if (e.name !== 'AbortError') throw e; } });
     carregaLib().catch(() => {});
   };
 })();
