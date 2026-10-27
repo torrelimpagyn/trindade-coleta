@@ -854,18 +854,20 @@ def montar(s, dia, cad, at):
                 print("  rota", cod, "indisponível:", e)
             if not x.get("Controle") and not o["pct"] and o["lin"]:
                 pend.append((o, dia_x))   # a INLOG não registrou o setor: confere no GPS depois de ler todos os controles
-        if at != "final" and trilhas:
+        if at != "final" and trilhas and dia_x == dia:   # setor emprestado de ontem não está rodando hoje
             try:
                 o.update(estado_gps(o, trilhas, gar, ater0))   # onde o rastreio deixou o caminhão (status no painel)
             except Exception as e:
                 print("  estado do GPS", cod, "falhou:", e)
+        elif at != "final" and dia_x != dia:
+            o["zf"] = "fora"   # setor emprestado de ontem: a operação dele já terminou
         o.pop("_ent", None)
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%", "gps:", o.get("pgps"), "%")
     ater = tuple(cad["aterro"]) if cad.get("aterro") else None
     for o in setores:   # hoje, setor fechado pela INLOG abaixo de 95%: o que o caminhão fez depois (GPS + geocercas)
         fins = o.pop("_fins", None)
-        if o["sit"] == "EXECUTADO" and o["pct"] < 95 and fins and at != "final":
+        if o["sit"] == "EXECUTADO" and o["pct"] < 95 and fins and at != "final" and max(fins)[0][:10] >= dia:
             try:
                 o["pe"] = apos_fechar(s, o, max(fins), setores, gar, ater, at != "final")
                 print("   ", o["s"], "fechado pela INLOG às", o["pe"]["f"], "com", o["pct"], "% →", o["pe"])
