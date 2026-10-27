@@ -1,7 +1,7 @@
 // Relatório do fechamento (uma cidade), no papel timbrado da Quebec Ambiental (Planejamento e Controle).
 // Fechamento do dia completo (resumo e uma seção por turno) ou de um turno só; folhas A4 com a barra verde e a logo.
 // Baixa como imagem, compartilha ou imprime/salva em PDF. Usa os dados do dia abertos no painel (D) e,
-// quando existem, as funções do index.html (stEnc, encerrou, peTxt, SIT, TLAB).
+// quando existem, as funções do index.html (stK: status pelo rastreio; TLAB).
 (function () {
   const LOGO = 'data:image/webp;base64,' +
     'UklGRhAVAABXRUJQVlA4IAQVAADwagCdASoEASgBPmEslEYkIqIhJ1RbKIAMCWdu4W0Q/aB3Li9TTUnqbgHra8UDpweZvHVd6E/a/KUPUX+d7a/81/eOo29F' +
@@ -73,16 +73,15 @@
   const hora = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
   const km = m => m >= 1000 ? n0(m / 1000, 1) + ' km' : n0(m) + ' m';
   const pl = (n, a, b) => n === 1 ? a : b;
-  const saiu = s => s.sit !== 'AGUARDANDO' || s.pct;
-  const pg = s => s.sit === 'GPS' ? (s.pgps || 0) : s.pct;
-  const cor = s => !saiu(s) ? '#c9d0cc' : s.sit === 'GPS' ? '#6f95e8' : pg(s) >= 90 ? '#4fb37f' : pg(s) >= 70 ? '#e9b44c' : '#e06b62';
-  const situ = s => {
-    if (typeof stEnc === 'function' && s.sit === 'EXECUTADO' && s.pct < 90) return stEnc(s)[0];
-    return (typeof SIT !== 'undefined' && SIT[s.sit] ? SIT[s.sit][0] : s.sit);
-  };
-  const enc = s => typeof encerrou === 'function' ? encerrou(s) : (s.sit === 'EXECUTADO' && s.pct < 90);
+  // Base: o rastreio dos caminhões (percentual pelo GPS); o status vem do painel (stK: Em execução, Finalizada, Incompleta, Aguardando)
+  const pg = s => s.pgps != null ? s.pgps : (s.pct || 0);
+  const NOME = { ex: 'Em execução', fi: 'Finalizada', in: 'Incompleta', ag: 'Aguardando' };
+  const stk = s => typeof stK === 'function' ? stK(s) : (s.sit === 'AGUARDANDO' && !s.pct && !(s.gps || []).length ? 'ag' : pg(s) >= 95 ? 'fi' : 'in');
+  const saiu = s => stk(s) !== 'ag';
+  const cor = s => !saiu(s) ? '#c9d0cc' : pg(s) >= 95 ? '#4fb37f' : pg(s) >= 80 ? '#e9b44c' : '#e06b62';
+  const situ = s => NOME[stk(s)];
+  const enc = s => stk(s) === 'in';
   const tlab = t => (typeof TLAB !== 'undefined' && TLAB[t]) || t || 'Outros';
-  const depois = s => typeof peTxt === 'function' && s.pe ? peTxt(s) : '';
   const ordem = (a, b) => String(a.s).localeCompare(String(b.s), 'pt-BR', { numeric: true });
   const slug = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
@@ -235,29 +234,29 @@
     });
     return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:#f3f6f4;border-radius:6px">${g0}${g}${t}</svg>`;
   }
-  const LEG = `<div class="lg"><span><i style="background:#4fb37f"></i>90% ou mais</span><span><i style="background:#e9b44c"></i>70 a 89%</span><span><i style="background:#e06b62"></i>abaixo de 70%</span><span><i style="background:#6f95e8"></i>só GPS</span><span><i style="background:#c9d0cc"></i>não saiu</span><span><i style="background:#fff;box-shadow:inset 0 0 0 1px #b4beb8"></i>outro turno</span></div>`;
+  const LEG = `<div class="lg"><span><i style="background:#4fb37f"></i>95% ou mais (meta)</span><span><i style="background:#e9b44c"></i>80 a 94%</span><span><i style="background:#e06b62"></i>abaixo de 80%</span><span><i style="background:#c9d0cc"></i>não saiu</span><span><i style="background:#fff;box-shadow:inset 0 0 0 1px #b4beb8"></i>outro turno</span></div>`;
 
   // ------------------------------------------------------------ números de um conjunto de setores
   function numeros(S, T, RS, jor) {
     const F = S.filter(saiu), naos = S.filter(s => !saiu(s));
-    const med = F.length ? F.reduce((a, s) => a + s.pct, 0) / F.length : null;
-    const comG = F.filter(s => s.pgps != null), medg = comG.length ? comG.reduce((a, s) => a + s.pgps, 0) / comG.length : null;
+    const med = F.length ? F.reduce((a, s) => a + pg(s), 0) / F.length : null;
+    const comI = F.filter(s => s.sit !== 'GPS'), medg = comI.length ? comI.reduce((a, s) => a + (s.pct || 0), 0) / comI.length : null;
     const ex = S.map(s => ({ s, e: extra(s, T, jor) })).filter(x => x.e), hes = ex.filter(x => x.e.he > 0);
     const heTot = hes.reduce((a, x) => a + x.e.he, 0);
     const r = s => RS[s.s] || {};
     const semF = F.reduce((a, s) => a + (r(s).tot || 0), 0), semN = naos.reduce((a, s) => a + (r(s).tot || 0), 0);
     const ruas = S.reduce((a, s) => a + (r(s).lista || []).length, 0);
-    return { F, naos, med, medg, conc: F.filter(s => pg(s) >= 90), baixo: F.filter(s => pg(s) < 70), inc: S.filter(enc), ex, hes, heTot, heMed: ex.length ? heTot / ex.length : null, semF, semN, semTot: semF + semN, ruas };
+    return { F, naos, med, medg, conc: F.filter(s => pg(s) >= 95), baixo: F.filter(s => pg(s) < 80), inc: S.filter(enc), ex, hes, heTot, heMed: ex.length ? heTot / ex.length : null, semF, semN, semTot: semF + semN, ruas };
   }
   const kpi = (v, l, c) => `<div class="k"><b${c ? ` style="color:${c}"` : ''}>${v}</b><span>${l}</span></div>`;
   function cartoes(N, fechado, T) {
     const heL = T && T.ini != null ? `hora extra média por setor (fora de ${expTxt(T)})` : 'hora extra média por setor';
     return `<div class="kp">
-      ${kpi(N.med == null ? '—' : n0(N.med) + '%', 'conclusão média (INLOG)', N.med == null ? null : N.med >= 90 ? '#1d7a4f' : N.med >= 70 ? '#a86f00' : '#c9302c')}
-      ${kpi(N.medg == null ? '—' : n0(N.medg) + '%', 'conclusão média (GPS)', '#2a5bd7')}
-      ${kpi(`${N.conc.length}<small> de ${N.F.length}</small>`, 'setores com 90% ou mais')}
-      ${kpi(N.baixo.length, 'setores abaixo de 70%', N.baixo.length ? '#c9302c' : null)}
-      ${kpi(N.inc.length, 'encerrados sem concluir', N.inc.length ? '#c9302c' : null)}
+      ${kpi(N.med == null ? '—' : n0(N.med) + '%', 'conclusão média pelo rastreio (GPS)', N.med == null ? null : N.med >= 95 ? '#1d7a4f' : N.med >= 80 ? '#a86f00' : '#c9302c')}
+      ${kpi(N.medg == null ? '—' : n0(N.medg) + '%', 'conclusão média na INLOG (referência)', '#6b6a65')}
+      ${kpi(`${N.conc.length}<small> de ${N.F.length}</small>`, 'rotas na meta (95% ou mais)')}
+      ${kpi(N.baixo.length, 'rotas abaixo de 80%', N.baixo.length ? '#c9302c' : null)}
+      ${kpi(N.inc.length, 'rotas incompletas', N.inc.length ? '#c9302c' : null)}
       ${kpi(N.naos.length, fechado ? 'setores que não saíram' : 'aguardando saída', N.naos.length && fechado ? '#c9302c' : null)}
       ${kpi(N.heMed == null ? '—' : hmin(N.heMed), `${heL}${N.hes.length ? ` · total ${hmin(N.heTot)}` : ''}`, N.heMed ? '#a86f00' : null)}
       ${kpi(N.semTot ? km(N.semTot) : '—', `de rota sem coleta${N.ruas ? ` · ${N.ruas} ${pl(N.ruas, 'rua', 'ruas')}` : ''}`, N.semTot ? '#c9302c' : null)}
@@ -273,10 +272,9 @@
     // destaques
     const li = [];
     if (fechado && N.naos.length) li.push(`<b>${N.naos.length} ${pl(N.naos.length, 'setor não saiu', 'setores não saíram')}:</b> ${N.naos.map(s => esc(s.s)).join(', ')}${N.semN ? ` (${km(N.semN)} de rota sem coleta)` : ''}.`);
-    if (N.inc.length) li.push(`<b>${N.inc.length} ${pl(N.inc.length, 'encerrado', 'encerrados')} sem concluir:</b> ${N.inc.map(s => `${esc(s.s)} (${n0(s.pct)}%${depois(s) ? ', ' + esc(depois(s)) : ''})`).join('; ')}.`);
-    const ap = S.filter(s => s.sit === 'EXECUTADO' && s.pct < 90 && !enc(s) && s.pe);
-    if (ap.length) li.push(`<b>Fechados abaixo de 90% com justificativa no GPS:</b> ${ap.map(s => `${esc(s.s)} (${n0(s.pct)}%, ${esc(depois(s))})`).join('; ')}.`);
-    if (N.baixo.length) li.push(`<b>Abaixo de 70%:</b> ${N.baixo.slice().sort((a, b) => pg(a) - pg(b)).map(s => `${esc(s.s)} (${n0(pg(s))}%)`).join(', ')}.`);
+    if (N.conc.length) li.push(`<b>Na meta (95% ou mais):</b> ${N.conc.slice().sort((a, b) => pg(b) - pg(a)).map(s => `${esc(s.s)} (${n0(pg(s))}%)`).join(', ')}.`);
+    if (N.inc.length) li.push(`<b>${N.inc.length} ${pl(N.inc.length, 'rota incompleta', 'rotas incompletas')}:</b> ${N.inc.slice().sort((a, b) => pg(a) - pg(b)).map(s => `${esc(s.s)} (${n0(pg(s))}%)`).join(', ')}.`);
+    if (N.baixo.length) li.push(`<b>Abaixo de 80%:</b> ${N.baixo.slice().sort((a, b) => pg(a) - pg(b)).map(s => `${esc(s.s)} (${n0(pg(s))}%)`).join(', ')}.`);
     const gpsSo = S.filter(s => s.sit === 'GPS');
     if (gpsSo.length) li.push(`<b>Coletados sem registro na INLOG (só GPS):</b> ${gpsSo.map(s => `${esc(s.s)} (${n0(s.pgps || 0)}%)`).join(', ')}.`);
     if (N.hes.length) {
@@ -292,17 +290,17 @@
     if (!li.length) li.push(fechado ? 'Todos os setores programados saíram e foram concluídos.' : 'Turno em andamento: sem ocorrências até agora.');
     B.push({ lista: true, tit: '<h2>Destaques</h2>', itens: li });
     // setores
-    const cab = '<tr><th>Setor</th><th>Veículo</th><th class="n">INLOG</th><th class="n">GPS</th><th>Situação</th><th class="n">Saída – retorno</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>';
+    const cab = '<tr><th>Setor</th><th>Veículo</th><th class="n">Rastreio</th><th class="n">INLOG</th><th>Situação</th><th class="n">Saída – retorno</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>';
     const linhas = S.map(s => {
       const e = extra(s, T, jor), r = RS[s.s];
       return `<tr><td><i style="background:${cor(s)}"></i><b>${esc(s.s)}</b></td><td>${esc((s.veic || []).join(', ') || '—')}</td>
-        <td class="n">${saiu(s) ? n0(s.pct) + '%' : '—'}</td><td class="n">${s.pgps != null ? n0(s.pgps) + '%' : '—'}</td><td>${esc(situ(s))}</td>
+        <td class="n"><b>${saiu(s) ? n0(pg(s)) + '%' : '—'}</b></td><td class="n">${saiu(s) && s.sit !== 'GPS' ? n0(s.pct || 0) + '%' : '—'}</td><td>${esc(situ(s))}</td>
         <td class="n">${s.saida || s.volta ? (s.saida || '—') + ' – ' + (s.volta || '—') : '—'}</td>
         <td class="n">${e ? (e.he ? '<b style="color:#a86f00">' + hmin(e.he) + '</b>' : '0') : '—'}</td>
         <td class="n">${r && r.tot ? km(r.tot) : '—'}</td></tr>`;
     });
     const heObs = T.ini != null ? `Hora extra: tempo fora da garagem antes das ${hora(T.ini)} ou depois das ${hora(T.fim)} (expediente do turno).` : `Hora extra: tempo entre a saída e o retorno à garagem além da jornada de ${hmin(jor)}.`;
-    B.push({ tab: true, tit: '<h2>Setores</h2>', cab, linhas, pos: `<div class="ob">INLOG: percentual registrado no sistema. GPS: parte da rota programada por onde o caminhão passou. ${heObs} Sem coleta: extensão da rota programada sem passagem do caminhão.</div>` });
+    B.push({ tab: true, tit: '<h2>Setores</h2>', cab, linhas, pos: `<div class="ob">Rastreio: parte da rota programada por onde o GPS do caminhão passou coletando (base do status). INLOG: percentual registrado no sistema, só como referência. Finalizada: saiu do setor com 95% ou mais; Incompleta: saiu com menos de 95%. ${heObs} Sem coleta: extensão da rota programada sem passagem do caminhão.</div>` });
     // ruas sem coleta: todas, por setor
     const L2 = [];
     S.forEach(s => {
@@ -346,12 +344,12 @@
     B.push({ html: `<h2>O dia na cidade</h2>${cartoes(ND, fechadoDia, null)}` });
     const pc = v => v == null ? '—' : n0(v) + '%';
     const lin = GR.map(T => { const N = T.N; return `<tr><td><b>${esc(T.n)}</b>${T.ini != null ? `<br><small>${expTxt(T)}</small>` : ''}</td><td class="n">${T.S.length}</td><td class="n">${N.naos.length || '—'}</td>
-      <td class="n">${pc(N.med)}</td><td class="n">${pc(N.medg)}</td><td class="n">${N.conc.length}</td><td class="n">${N.baixo.length || '—'}</td><td class="n">${N.inc.length || '—'}</td>
+      <td class="n"><b>${pc(N.med)}</b></td><td class="n">${pc(N.medg)}</td><td class="n">${N.conc.length}</td><td class="n">${N.baixo.length || '—'}</td><td class="n">${N.inc.length || '—'}</td>
       <td class="n">${N.hes.length ? `<b style="color:#a86f00">${hmin(N.heTot)}</b><br><small>${N.hes.length} ${pl(N.hes.length, 'setor', 'setores')}</small>` : '0'}</td><td class="n">${N.semTot ? `${km(N.semTot)}${N.ruas ? `<br><small>${N.ruas} ${pl(N.ruas, 'rua', 'ruas')}</small>` : ''}` : '—'}</td></tr>`; });
     if (GR.length > 1) lin.push(`<tr class="tt"><td>Dia</td><td class="n">${todos.length}</td><td class="n">${ND.naos.length || '—'}</td><td class="n">${pc(ND.med)}</td><td class="n">${pc(ND.medg)}</td><td class="n">${ND.conc.length}</td><td class="n">${ND.baixo.length || '—'}</td><td class="n">${ND.inc.length || '—'}</td><td class="n">${ND.hes.length ? hmin(ND.heTot) : '0'}</td><td class="n">${ND.semTot ? km(ND.semTot) : '—'}</td></tr>`);
-    B.push({ tab: true, tit: '<h2>Fechamento por turno</h2>', cab: '<tr><th>Turno</th><th class="n">Setores</th><th class="n">Não saíram</th><th class="n">INLOG</th><th class="n">GPS</th><th class="n">≥ 90%</th><th class="n">&lt; 70%</th><th class="n">Sem concluir</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>', linhas: lin,
-      pos: `<div class="ob">INLOG e GPS: conclusão média dos setores que saíram. Sem concluir: setores encerrados abaixo de 90% sem justificativa no GPS. ${EXP[CX.s] ? 'O turno de cada setor vem do horário em que o caminhão trabalhou, comparado com o expediente; hora extra é o tempo fora do expediente.' : `Hora extra: além da jornada de ${hmin(jor)}.`} O detalhe de cada turno, com todas as ruas sem coleta, está nas páginas seguintes.</div>` });
-    const mini = GR.filter(T => T.k !== 'X').map(T => { const m = mapa(T.S, todos, false); return m ? `<div><div class="mc"><b>${esc(T.n)}</b>${T.ini != null ? ' · ' + expTxt(T) : ''} · ${T.N.med == null ? '—' : n0(T.N.med) + '%'} na INLOG</div>${m}</div>` : ''; }).filter(Boolean);
+    B.push({ tab: true, tit: '<h2>Fechamento por turno</h2>', cab: '<tr><th>Turno</th><th class="n">Setores</th><th class="n">Não saíram</th><th class="n">Rastreio</th><th class="n">INLOG</th><th class="n">≥ 95%</th><th class="n">&lt; 80%</th><th class="n">Incompletas</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>', linhas: lin,
+      pos: `<div class="ob">Rastreio (GPS) e INLOG: conclusão média das rotas que saíram; o rastreio é a base. Incompletas: rotas encerradas abaixo de 95% pelo rastreio. ${EXP[CX.s] ? 'O turno de cada setor vem do horário em que o caminhão trabalhou, comparado com o expediente; hora extra é o tempo fora do expediente.' : `Hora extra: além da jornada de ${hmin(jor)}.`} O detalhe de cada turno, com todas as ruas sem coleta, está nas páginas seguintes.</div>` });
+    const mini = GR.filter(T => T.k !== 'X').map(T => { const m = mapa(T.S, todos, false); return m ? `<div><div class="mc"><b>${esc(T.n)}</b>${T.ini != null ? ' · ' + expTxt(T) : ''} · ${T.N.med == null ? '—' : n0(T.N.med) + '%'} pelo rastreio</div>${m}</div>` : ''; }).filter(Boolean);
     if (mini.length > 1) B.push({ html: `<h2>Como cada turno encerrou</h2><div class="mm">${mini.join('')}</div>${LEG}` });
     GR.forEach(T => {
       B.push({ quebra: true, ctx: nomeT(T) });
@@ -486,7 +484,7 @@
     const RS = {};
     GR.forEach(T => T.S.forEach(s => {
       try {
-        if (saiu(s) && (D.at === 'final' || !['ATIVO', 'AGUARDANDO'].includes(s.sit))) { const r = semColeta(s, R, false); if (r) RS[s.s] = r; }
+        if (saiu(s) && (D.at === 'final' || stk(s) !== 'ex')) { const r = semColeta(s, R, false); if (r) RS[s.s] = r; }
         else if (!saiu(s) && T.fechado) { const r = semColeta(s, R, true); if (r) RS[s.s] = r; }
       } catch (e) { }
     }));
