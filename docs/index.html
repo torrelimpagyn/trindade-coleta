@@ -62,7 +62,7 @@ header h1{font-size:17px;margin:0}
 <div class="wrap" id="app" hidden>
  <div class="dias"><button id="prev" aria-label="Dia anterior">‹</button><button id="diaBtn" class="db" aria-label="Escolher dia no calendário"></button><button id="next" aria-label="Dia seguinte">›</button></div><div class="cal" id="cal" hidden></div><div class="past" id="past" hidden></div>
  <div class="vt" id="vt"><button data-v="col" class="on">Coleta</button><button data-v="ate">Aterro</button></div>
- <button class="rbtn" id="relBtn">📄 Relatório do fechamento do dia</button>
+ <button class="rbtn" id="relBtn">📄 Relatório do fechamento (dia e turnos)</button>
  <div id="vCol"><div class="tabs" id="tabsT"></div>
  <div class="sum" id="sum"></div><div id="list"></div></div>
  <div id="vAte" hidden><div class="sum" id="aSum" style="grid-template-columns:repeat(2,1fr)"></div><div id="aList"></div></div>
@@ -194,7 +194,7 @@ async function abrir(pw){const e=await baixar(DIA?'hist/'+DIA+'.enc.json':'dados
 async function carregar(){const pw=localStorage.getItem('tc_pw');if(!pw){document.getElementById('lock').hidden=false;return}
  try{D=await abrir(pw);document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;render();if(!DIA){HOJE=D.dia;if(!Object.keys(IDX).length)indice();else botoes()}}
  catch(e){if(DIA||e.name!=='OperationError'){document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;document.getElementById('tit').textContent='Coleta '+CX.n;document.getElementById('sub').textContent='';document.getElementById('tabsT').innerHTML='';document.getElementById('tabsT').style.display='none';document.getElementById('sum').innerHTML='';document.getElementById('list').innerHTML='<div class="note">'+(DIA?'Não há dados guardados desse dia.':'Os dados desta cidade ainda não estão disponíveis. Volte em alguns minutos.')+'</div>';return}localStorage.removeItem('tc_pw');document.getElementById('app').hidden=true;document.getElementById('lock').hidden=false;document.getElementById('err').textContent='Senha incorreta ou dados indisponíveis.'}}
-document.getElementById('relBtn').onclick=async()=>{const b=document.getElementById('relBtn');if(!D)return;if(!window.relatorio){b.disabled=true;try{await new Promise((ok,er)=>{const s=document.createElement('script');s.src='relatorio.js?v=2';s.onload=ok;s.onerror=er;document.head.appendChild(s)})}catch(e){b.disabled=false;return}b.disabled=false}window.relatorio(D,CX)};
+document.getElementById('relBtn').onclick=async()=>{const b=document.getElementById('relBtn');if(!D)return;if(!window.relatorio){b.disabled=true;try{await new Promise((ok,er)=>{const s=document.createElement('script');s.src='relatorio.js?v=3';s.onload=ok;s.onerror=er;document.head.appendChild(s)})}catch(e){b.disabled=false;return}b.disabled=false}window.relatorio(D,CX)};
 document.getElementById('go').onclick=()=>{try{localStorage.setItem('tc_pw',document.getElementById('pw').value)}catch(e){}carregar()};
 document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
 cidades();carregar();setInterval(()=>{if(!DIA)indice()},900000);setInterval(()=>{if(D&&!DIA&&!document.getElementById('sheet').classList.contains('open'))carregar()},120000);
