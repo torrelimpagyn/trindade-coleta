@@ -18,7 +18,7 @@ from shapely.ops import unary_union
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import coletor as K
 
-DIAS = int(os.environ.get("CONSULTA_DIAS", "21"))     # semanas de GPS usadas para o horário
+DIAS = int(os.environ.get("CONSULTA_DIAS", "14"))     # dias de GPS usados para o horário
 OVERPASS = ["https://overpass-api.de/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter",
             "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
@@ -112,16 +112,16 @@ def osm(bbox):
     q = ('[out:json][timeout:240];(way["highway"]["name"](%f,%f,%f,%f);'
          'node["place"~"^(suburb|neighbourhood|quarter|hamlet|village)$"]["name"](%f,%f,%f,%f););out geom qt;') % (s, w, n, e, s, w, n, e)
     ult = None
-    for tentativa in range(3):
+    for tentativa in range(2):
         for url in OVERPASS:
             try:
-                r = requests.post(url, data={"data": q}, timeout=300, headers={"User-Agent": "coleta-consulta/1.0"})
+                r = requests.post(url, data={"data": q}, timeout=200, headers={"User-Agent": "coleta-consulta/1.0"})
                 if r.ok:
                     return r.json()["elements"]
                 ult = "%s %s" % (url, r.status_code)
             except Exception as ex:
                 ult = "%s %s" % (url, ex)
-        time.sleep(30)
+        time.sleep(20)
     raise RuntimeError("OpenStreetMap indisponível: %s" % ult)
 
 
