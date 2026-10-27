@@ -676,15 +676,56 @@ def apos_fechar(s, o, fin, setores, gar, ater, hoje):
     return out
 
 
-def encerrou(o):
-    """Setor fechado pela INLOG com menos de 90% e o caminhão não foi para apoio, aterro nem voltou a coletar."""
-    return o["sit"] == "EXECUTADO" and o["pct"] < 90 and (o.get("pe") or {}).get("t") in (None, "garagem")
+def pct_gps(o):
+    """Percentual que vale no painel: o do rastreio (rota programada × GPS); sem rota programada, o da INLOG."""
+    return o["pgps"] if o.get("pgps") is not None else o["pct"]
+
+
+def encerrou(o, fim=False):
+    """Setor incompleto: saiu e terminou abaixo de 95% pelo rastreio (no dia em andamento, só os que a INLOG já fechou)."""
+    return (o["sit"] != "AGUARDANDO" or bool(o["pct"])) and pct_gps(o) < 95 and (fim or o["sit"] != "ATIVO")
+
+
+def estado_gps(o, trilhas, gar, ater):
+    """Onde o rastreio deixou o caminhão em relação ao setor (base do status no painel):
+    uset = última hora com GPS dentro do setor (polígono ou a até 100 m da borda), ugps = hora do último ponto,
+    zf = zona do último ponto (setor, garagem, aterro ou fora) e atp = foi ao aterro depois de sair do setor."""
+    pts = sorted(p for tr in trilhas.values() for p in tr)
+    if not pts:
+        return {}
+    out = {"ugps": pts[-1][0].strftime("%H:%M")}
+    aneis = [list(r) + [r[0]] for r in o.get("ring") or [] if len(r) > 2]
+    if not aneis:
+        return out
+    la = [q[0] for r in aneis for q in r]
+    lo = [q[1] for r in aneis for q in r]
+    caixa = (min(la) - .0015, max(la) + .0015, min(lo) - .0015, max(lo) + .0015)
+
+    def no_setor(p):
+        if not (caixa[0] <= p[0] <= caixa[1] and caixa[2] <= p[1] <= caixa[3]):
+            return False
+        return any(dentro(p, r) for r in aneis) or any(dist_linha(p, r) <= 100 for r in aneis)
+    i = len(pts) - 1
+    while i >= 0 and not no_setor(pts[i][1]):
+        i -= 1
+    fim = pts[-1][1]
+    if gar and dist_m(fim, gar) <= RAIO_GARAGEM:
+        out["zf"] = "garagem"
+    elif ater and dist_m(fim, ater) <= RAIO_ATERRO:
+        out["zf"] = "aterro"
+    else:
+        out["zf"] = "setor" if i == len(pts) - 1 else "fora"
+    if i >= 0:
+        out["uset"] = pts[i][0].strftime("%H:%M")
+        out["atp"] = bool(ater and any(dist_m(p[1], ater) <= RAIO_ATERRO + 200 for p in pts[i + 1:]))
+    return out
 
 
 # ---------------------------------------------------------------- principal
 def montar(s, dia, cad, at):
     """Monta o quadro de um dia (hoje ou um dia anterior)."""
     gar = tuple(cad["garagem"]) if cad.get("garagem") else None
+    ater0 = tuple(cad["aterro"]) if cad.get("aterro") else None
     grid = pegar_json(s, GRID.format(d=dia))
     linhas = [x for x in grid["Data"]["Data"] if da_cidade(x.get("MacroSetor"))]
     # A INLOG repete o mesmo setor em várias linhas (uma por viagem/veículo, ou uma "ATIVO" e outra "AGUARDANDO").
@@ -813,13 +854,18 @@ def montar(s, dia, cad, at):
                 print("  rota", cod, "indisponível:", e)
             if not x.get("Controle") and not o["pct"] and o["lin"]:
                 pend.append((o, dia_x))   # a INLOG não registrou o setor: confere no GPS depois de ler todos os controles
+        if at != "final" and trilhas:
+            try:
+                o.update(estado_gps(o, trilhas, gar, ater0))   # onde o rastreio deixou o caminhão (status no painel)
+            except Exception as e:
+                print("  estado do GPS", cod, "falhou:", e)
         o.pop("_ent", None)
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%", "gps:", o.get("pgps"), "%")
     ater = tuple(cad["aterro"]) if cad.get("aterro") else None
-    for o in setores:   # setor fechado com menos de 90%: o que o caminhão fez depois (GPS + geocercas)
+    for o in setores:   # hoje, setor fechado pela INLOG abaixo de 95%: o que o caminhão fez depois (GPS + geocercas)
         fins = o.pop("_fins", None)
-        if o["sit"] == "EXECUTADO" and o["pct"] < 90 and fins:
+        if o["sit"] == "EXECUTADO" and o["pct"] < 95 and fins and at != "final":
             try:
                 o["pe"] = apos_fechar(s, o, max(fins), setores, gar, ater, at != "final")
                 print("   ", o["s"], "fechado pela INLOG às", o["pe"]["f"], "com", o["pct"], "% →", o["pe"])
@@ -883,8 +929,8 @@ def guardar_dia(dados, sit, idx):
         return
     os.makedirs(HIST, exist_ok=True)
     criptografar(json.dumps(dados, separators=(",", ":")).encode(), os.path.join(HIST, dados["dia"] + ".enc.json"), True)
-    inc = sum(1 for x in dados["S"] if encerrou(x))
-    idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(x.get("pgps") or 0 if x["sit"] == "GPS" else x["pct"] for x in S) / len(S)) if S else 0, "n": len(S), "i": inc, "v": VERSAO_HIST}
+    inc = sum(1 for x in dados["S"] if encerrou(x, sit == "final"))
+    idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(pct_gps(x) for x in S) / len(S)) if S else 0, "n": len(S), "i": inc, "v": VERSAO_HIST}
 
 
 def cad_cidade():
