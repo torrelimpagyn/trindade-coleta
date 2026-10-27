@@ -3,15 +3,17 @@
 <title>Coleta · Hoje</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-:root{--bg:#f3f6f4;--card:#fff;--ink:#14231c;--mut:#5d6b64;--line:#e2e9e5;--g:#2f6b52;--g2:#6cc49a;--gbg:#eef7f2;--soft:#f6faf8;--red:#c9302c;--redbg:#fbeaea;--amb:#b7791f;--ambbg:#fdf3e1}
-@media(prefers-color-scheme:dark){:root{--bg:#0f1512;--card:#17201b;--ink:#e9f1ec;--mut:#9fb0a7;--line:#26332c;--gbg:#183026;--soft:#1b2620;--redbg:#3a1615;--ambbg:#3a2a12}}
+:root{--bg:#f1f5f3;--card:#fff;--ink:#14231c;--mut:#5d6b64;--line:#e2e9e5;--g:#1f5f45;--gbg:#eef7f2;--soft:#f6faf8;--ok:#1f9d55;--okT:#16804a;--okBg:#e3f5eb;--wa:#e0a100;--waT:#a86f00;--waBg:#fdf3dc;--ba:#d64541;--baT:#c0322e;--baBg:#fbe7e6;--ex:#2a6fdb;--exT:#2459b8;--exBg:#e7effc;--ag:#9aa6a0;--agBg:#eef1ef;--red:#c9302c;--redbg:#fbeaea;--amb:#b7791f;--ambbg:#fdf3e1;--sh:0 1px 2px rgba(16,40,28,.06),0 4px 14px rgba(16,40,28,.06)}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1411;--card:#17201b;--ink:#e9f1ec;--mut:#9fb0a7;--line:#26332c;--gbg:#183026;--soft:#1b2620;--okT:#5fd08f;--okBg:#173a27;--waT:#f0c050;--waBg:#3a2d10;--baT:#f08a85;--baBg:#3d1a19;--exT:#8fb4ff;--exBg:#17284a;--agBg:#222c27;--redbg:#3a1615;--ambbg:#3a2a12;--sh:0 1px 2px rgba(0,0,0,.3)}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-header{position:sticky;top:0;z-index:20;background:var(--g);color:#fff;padding:calc(12px + env(safe-area-inset-top)) 16px 12px}
+header{position:sticky;top:0;z-index:20;background:linear-gradient(135deg,#1f5f45,#2f7a58);color:#fff;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;box-shadow:0 2px 10px rgba(0,0,0,.12)}
 header h1{font-size:17px;margin:0}
 .cid{appearance:none;-webkit-appearance:none;border:0;background:rgba(255,255,255,.18) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23fff'/%3E%3C/svg%3E") no-repeat right 10px center;color:#fff;font:inherit;font-weight:700;font-size:13px;border-radius:999px;padding:5px 28px 5px 11px;margin-bottom:6px}.cid option{color:#111}
-.cons{float:right;color:#fff;background:rgba(255,255,255,.18);border-radius:999px;padding:5px 11px;font-size:12.5px;font-weight:700;text-decoration:none;margin-top:-2px}header .s{font-size:12.5px;opacity:.9;margin-top:2px}
-.wrap{max-width:760px;margin:0 auto;padding:12px 16px 40px}
+.cons{float:right;color:#fff;background:rgba(255,255,255,.18);border-radius:999px;padding:5px 11px;font-size:12.5px;font-weight:700;text-decoration:none;margin-top:-2px}header .s{font-size:12.5px;opacity:.92;margin-top:2px;display:flex;align-items:center;gap:6px}
+.live{width:8px;height:8px;border-radius:50%;background:#7CFFB2;box-shadow:0 0 0 0 rgba(124,255,178,.7);animation:pulso 1.8s infinite}
+@keyframes pulso{0%{box-shadow:0 0 0 0 rgba(124,255,178,.7)}70%{box-shadow:0 0 0 8px rgba(124,255,178,0)}100%{box-shadow:0 0 0 0 rgba(124,255,178,0)}}
+.wrap{max-width:780px;margin:0 auto;padding:12px 14px 40px}
 .dias{display:flex;gap:6px;margin-bottom:10px}.dias button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;width:42px;font:inherit;font-weight:700;font-size:18px}.dias button:disabled{opacity:.35}.dias .db{flex:1;width:auto;min-width:0;font-size:15px;padding:9px 10px;text-align:center}.dias .db small{color:var(--mut);font-weight:600}
 .cal{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:12px;box-shadow:0 6px 20px rgba(0,0,0,.08)}.cal .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}.cal .ch b{font-size:15px}.cal .ch button{border:0;background:var(--soft);color:var(--ink);border-radius:9px;width:38px;height:34px;font:inherit;font-size:18px;font-weight:700}.cal .ch button:disabled{opacity:.3}
 .cg{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.cg i{font-style:normal;text-align:center;font-size:11px;color:var(--mut);font-weight:700;padding:2px 0}
@@ -20,147 +22,329 @@ header h1{font-size:17px;margin:0}
 .c-g{background:#d7efe2!important;color:#1d5a3f!important}.c-a{background:#fbe8c4!important;color:#7a4e0c!important}.c-r{background:#f6d3d1!important;color:#8e221e!important}
 @media(prefers-color-scheme:dark){.c-g{background:#1f4a35!important;color:#bfe9d2!important}.c-a{background:#4a3612!important;color:#f3d39a!important}.c-r{background:#4d1d1b!important;color:#f3bdb9!important}}
 .leg2{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--mut);margin-top:8px}.leg2 i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-2px}.cn{font-size:11px;color:var(--mut);margin-top:6px}.past{background:var(--ambbg);color:var(--amb);border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;margin-bottom:10px}
-.vt{display:flex;gap:6px;margin-bottom:10px}.vt button{flex:1;border:1px solid var(--line);background:var(--card);color:var(--mut);border-radius:999px;padding:8px;font:inherit;font-weight:700}.vt button.on{background:var(--ink);color:var(--card);border-color:var(--ink)}
-.at{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}.at .h{display:flex;align-items:center;gap:8px;margin-bottom:6px}.at .h b{font-size:15px}.at .h .tag{margin-left:auto}.at .g{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:13px}.at .g span{display:block;color:var(--mut);font-size:11.5px}.at .g b{font-weight:700}.at .hi{color:var(--red)}
+.vt{display:flex;gap:6px;margin-bottom:10px}.vt button{flex:1;border:1px solid var(--line);background:var(--card);color:var(--mut);border-radius:999px;padding:8px 6px;font:inherit;font-weight:700;font-size:14px}.vt button.on{background:var(--ink);color:var(--card);border-color:var(--ink)}
+.at{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}.at .h{display:flex;align-items:center;gap:8px;margin-bottom:6px}.at .h b{font-size:15px}.at .h .tag{margin-left:auto}.at .g{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:13px}.at .g span{display:block;color:var(--mut);font-size:11.5px}.at .g b{font-weight:700}
 .tabs{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;margin-bottom:12px}
 .tabs button{flex:1;border:0;background:none;padding:8px;border-radius:9px;font:inherit;font-weight:600;color:var(--mut)}
 .tabs button.on{background:var(--g);color:#fff}
-.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.sum{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
 .sum div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}.sum b{display:block;font-size:20px}.sum small{color:var(--mut);font-size:11.5px}
-.sec{background:var(--card);border:1px solid #cfe6da;border-radius:12px;margin-bottom:10px;overflow:hidden}
-@media(prefers-color-scheme:dark){.sec{border-color:var(--line)}}
-.sh{display:flex;align-items:center;gap:12px;padding:12px 14px 6px;cursor:pointer}
 .tag{font-size:11px;font-weight:700;color:var(--g);background:var(--gbg);border-radius:6px;padding:3px 7px}
-.sh .nm{font-weight:700;font-size:15.5px}.sh .sit{font-size:11.5px;color:var(--mut);margin-left:6px;font-weight:600}
-.sh .pc{margin-left:auto;font-weight:800;color:var(--g);font-size:16px}
+/* placar do turno */
+.placar{display:flex;gap:14px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px;box-shadow:var(--sh)}
+.anel{position:relative;width:104px;height:104px;flex:none}.anel svg{width:104px;height:104px;transform:rotate(-90deg)}.anel .v{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}.anel .v b{font-size:25px;line-height:1;font-weight:800}.anel .v small{font-size:10px;color:var(--mut);font-weight:700;margin-top:3px;letter-spacing:.3px}
+.anel circle{transition:stroke-dashoffset 1s cubic-bezier(.2,.8,.2,1),stroke .4s}
+.pinfo{flex:1;min-width:0}.pinfo .t{font-weight:800;font-size:15px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}.pinfo .t .lv{font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px}
+.trilha{display:flex;gap:2px;margin:9px 0 7px;height:12px}.trilha i{flex:1;border-radius:3px;min-width:3px;transition:background .4s}
+.pinfo .s2{font-size:12.5px;color:var(--mut);display:flex;gap:12px;flex-wrap:wrap}.pinfo .s2 b{color:var(--ink)}
+.chips{display:flex;gap:6px;overflow-x:auto;margin:0 -14px 10px;padding:2px 14px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;display:flex;align-items:center;gap:6px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 11px;font:inherit;font-size:13px;font-weight:700}.chip b{font-size:14px}.chip i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.chip.on{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.podio{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.pd{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:9px 8px 8px;text-align:center;box-shadow:var(--sh);position:relative;overflow:hidden;border:0;font:inherit;color:inherit;width:100%}
+.pd .m{font-size:22px;line-height:1}.pd b{display:block;font-size:13px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pd .p{font-size:18px;font-weight:800}.pd small{display:block;font-size:10.5px;color:var(--mut)}
+.pd.p1{background:linear-gradient(160deg,#fff7d6,var(--card) 60%)}@media(prefers-color-scheme:dark){.pd.p1{background:linear-gradient(160deg,#3a3110,var(--card) 60%)}}
+.ptit{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:800;color:var(--mut);letter-spacing:.4px;text-transform:uppercase;margin:4px 2px 6px}.ptit a{color:var(--g);text-transform:none;letter-spacing:0;font-weight:700;text-decoration:none;cursor:pointer}
+.ord{display:flex;align-items:center;justify-content:space-between;margin:0 2px 8px;font-size:12px;color:var(--mut)}.ord select{font:inherit;font-size:12.5px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:4px 6px}
+/* cards de setor */
+.sec{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--ag);border-radius:12px;margin-bottom:9px;overflow:hidden;box-shadow:var(--sh);transition:transform .15s}
+.sec:active{transform:scale(.995)}
+.sec.k-ex{border-left-color:var(--ex)}.sec.k-fi{border-left-color:var(--ok)}.sec.k-in.l-wa{border-left-color:var(--wa)}.sec.k-in.l-ba{border-left-color:var(--ba)}
+.sh{display:flex;align-items:center;gap:10px;padding:11px 12px 6px;cursor:pointer}
+.sh .nm{font-weight:800;font-size:17px;letter-spacing:.2px}.sh .mid{min-width:0;display:flex;flex-direction:column;gap:3px}
+.stp{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;border-radius:999px;padding:2px 8px;width:max-content}
+.stp.ex{background:var(--exBg);color:var(--exT)}.stp.fi{background:var(--okBg);color:var(--okT)}.stp.in.wa{background:var(--waBg);color:var(--waT)}.stp.in.ba{background:var(--baBg);color:var(--baT)}.stp.ag{background:var(--agBg);color:var(--mut)}
+.stp .dt{width:7px;height:7px;border-radius:50%;background:currentColor}.stp.ex .dt{animation:pisca 1.2s infinite}
+@keyframes pisca{50%{opacity:.25}}
+.vei{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bdg{font-size:11px;font-weight:800;color:#8a6500;background:#fff1c2;border-radius:999px;padding:1px 7px;margin-left:4px}@media(prefers-color-scheme:dark){.bdg{background:#4a3a0c;color:#ffd86b}}
+.sh .pc{margin-left:auto;font-weight:800;font-size:19px;text-align:right;line-height:1.05}
+.pc small{display:block;font-size:9.5px;font-weight:700;color:var(--mut);text-align:right;line-height:1.1;letter-spacing:.3px;margin-top:2px}
 .sh .ch{color:var(--mut);font-size:12px;transition:transform .2s}.sec.open .ch{transform:rotate(180deg)}
-.bar{height:7px;background:var(--line);border-radius:4px;margin:2px 14px 12px;overflow:hidden}.bar span{display:block;height:100%;background:var(--g2);border-radius:4px}
+.bar{position:relative;height:9px;background:var(--line);border-radius:5px;margin:2px 12px 6px;overflow:visible}.bar span{display:block;height:100%;border-radius:5px;transition:width 1s cubic-bezier(.2,.8,.2,1),background .4s}
+.bar .meta{position:absolute;top:-3px;bottom:-3px;left:95%;width:2px;background:var(--ink);opacity:.45;border-radius:1px}
+.ib{display:flex;align-items:center;gap:8px;margin:0 12px 11px}.ib small{font-size:11px;color:var(--mut);font-weight:700;white-space:nowrap}.ib .bar{flex:1;margin:0;height:4px}.ib .bar span{background:var(--ag)}.ib b{font-size:12px;color:var(--mut);min-width:36px;text-align:right}
 .det{display:none;background:var(--soft);border-top:1px solid var(--line);padding:10px 14px 12px}.sec.open .det{display:block}
 .pill{display:inline-block;background:var(--g);color:#fff;font-weight:700;font-size:12px;border-radius:12px;padding:3px 10px;margin:2px 0 8px}
-.kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}.kv span{color:var(--mut)}.kv b{font-weight:700}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}.kv span{color:var(--mut)}.kv b{font-weight:700;text-align:right}
 .kv:last-of-type{border-bottom:0}
 .par{display:flex;gap:8px;align-items:center;padding:6px 0 6px 10px;font-size:12.5px;color:var(--ink);text-decoration:none;border-left:3px solid #e08a00;margin:4px 0}.par span{color:var(--mut)}.par b{margin-left:auto}.par i{font-style:normal;color:var(--g);font-weight:600}
 .btn{display:block;width:100%;margin-top:10px;border:1px solid var(--g);color:var(--g);background:var(--card);border-radius:10px;padding:9px;font:inherit;font-weight:700}
 .rbtn{display:block;width:100%;margin:0 0 10px;border:1px solid var(--g);background:var(--card);color:var(--g);border-radius:10px;padding:9px;font:inherit;font-weight:700}
-.st-g{color:#2a5bd7}.st-w{color:var(--mut)}.st-a{color:var(--g)}.st-e{color:var(--amb)}.st-r{color:var(--red)}
+/* caminhões */
+.trk{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 12px;margin-bottom:9px;box-shadow:var(--sh)}
+.trk .th{display:flex;align-items:center;gap:9px}.trk .rk{font-size:20px;min-width:28px;text-align:center;font-weight:800;color:var(--mut)}.trk .th b{font-size:15.5px}.trk .th .pc{margin-left:auto;font-size:19px;font-weight:800;text-align:right;line-height:1.05}
+.tst{font-size:11.5px;font-weight:700;color:var(--mut)}.tst.ex{color:var(--exT)}
+.tl{position:relative;height:22px;background:var(--soft);border:1px solid var(--line);border-radius:7px;margin:10px 0 3px;overflow:hidden}.tl i{position:absolute;top:2px;bottom:2px;border-radius:5px;font-style:normal;font-size:10px;font-weight:800;color:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap;min-width:3px}
+.tlx{display:flex;justify-content:space-between;font-size:10px;color:var(--mut)}
+.tsec{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 2px}.tsec span{font-size:12px;font-weight:700;border-radius:8px;padding:3px 8px}
+.tk{display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--mut);margin-top:6px}.tk b{color:var(--ink)}
 #sheet{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;flex-direction:column}#sheet.open{display:flex}
 #sheet .hd{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;background:var(--card);border-bottom:1px solid var(--line)}
 #sheet .hd button{border:0;background:var(--soft);border-radius:10px;padding:8px 12px;font:inherit;font-weight:600;color:var(--ink)}#sheet .hd h2{font-size:16px;margin:0}
-#map{flex:1;min-height:0}#sheet .ft{background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));font-size:13px}
+#map{flex:1;min-height:0}#sheet .ft{background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));font-size:13px;max-height:42vh;overflow:auto}
 .leg{display:flex;gap:12px;flex-wrap:wrap;color:var(--mut);font-size:12px;margin-top:4px}.leg i{display:inline-block;width:16px;height:4px;border-radius:2px;margin-right:4px;vertical-align:middle}
-.truck{background:#2a78d6;border:3px solid #fff;border-radius:50%;width:26px;height:26px;box-shadow:0 1px 5px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:13px}
+.truck{background:#2a78d6;border:3px solid #fff;border-radius:50%;width:28px;height:28px;box-shadow:0 1px 5px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:14px}
 .ini{background:#1a8a4a;border:3px solid #fff;border-radius:50%;width:24px;height:24px;box-shadow:0 1px 5px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:12px}
+.lbl{background:rgba(255,255,255,.92);border:0;box-shadow:0 1px 3px rgba(0,0,0,.3);font-weight:800;font-size:11px;padding:1px 5px;border-radius:5px;color:#14231c}
 .nav{display:flex;align-items:center;gap:10px;margin-top:8px;border-radius:10px;padding:11px 12px;font-weight:700;font-size:14.5px;text-decoration:none;background:#2a78d6;color:#fff}.nav small{margin-left:auto;font-weight:600;font-size:11.5px;opacity:.9;text-align:right}.nav.n2{background:var(--card);color:#1a8a4a;border:1.5px solid #1a8a4a}
-.pc small{display:block;font-size:9.5px;font-weight:700;color:var(--mut);text-align:right;line-height:1;letter-spacing:.3px}
-.gb{display:flex;align-items:center;gap:8px;margin:-6px 14px 12px}.gb small{font-size:11px;color:var(--mut);font-weight:700;white-space:nowrap}.gb .bar{flex:1;margin:0;height:5px}.gb .bar span{background:#2a5bd7}.gb b{font-size:13px;color:#2a5bd7;min-width:46px;text-align:right}
-.lt{display:flex;gap:6px;margin:6px 0 2px}.lt button{flex:1;border:1px solid var(--line);background:var(--soft);color:var(--mut);border-radius:999px;padding:6px 8px;font:inherit;font-size:12.5px;font-weight:700}.lt button.on{background:#1f3fbf;border-color:#1f3fbf;color:#fff}.lt button.on[data-l=r]{background:#1a8a4a;border-color:#1a8a4a}
+.lt{display:flex;gap:6px;margin:6px 0 2px}.lt button{flex:1;border:1px solid var(--line);background:var(--soft);color:var(--mut);border-radius:999px;padding:6px 8px;font:inherit;font-size:12.5px;font-weight:700}.lt button.on{background:#1f3fbf;border-color:#1f3fbf;color:#fff}.lt button.on[data-l=r]{background:#d13b30;border-color:#d13b30}.lt button.play{background:var(--g);border-color:var(--g);color:#fff}
+.tlg{display:flex;flex-direction:column;gap:4px;margin-top:6px}.tlg div{display:flex;align-items:center;gap:8px;font-size:12.5px}.tlg i{width:18px;height:5px;border-radius:3px;flex:none}.tlg b{margin-left:auto}
 .leaflet-popup-content .nav{font-size:13px;padding:9px 10px;margin-top:6px}.leaflet-popup-content .nav.n2{background:#fff}.leaflet-container a.nav{color:#fff}.leaflet-container a.nav.n2{color:#1a8a4a}
 .lock{max-width:360px;margin:60px auto;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}.lock input{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin:10px 0;background:var(--bg);color:var(--ink)}.lock button{width:100%;border:0;background:var(--g);color:#fff;border-radius:10px;padding:10px;font:inherit;font-weight:700}.err{color:var(--red);font-size:13px;margin-top:8px}.note{color:var(--mut);font-size:11.5px;text-align:center;margin-top:14px}
+.como{margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:12.5px;color:var(--mut)}.como summary{font-weight:700;color:var(--ink);cursor:pointer}.como p{margin:8px 0 0}.como b{color:var(--ink)}
+.vazio{text-align:center;color:var(--mut);font-size:13px;padding:22px 10px}
+@media(prefers-color-scheme:dark){.btn,.rbtn{color:#7fd3a8;border-color:#3d7a5d}.ptit a{color:#7fd3a8}}
 </style></head><body>
 <header><a class="cons" id="cons" href="consulta.html">Consultar endereço ›</a><select id="cid" class="cid" aria-label="Cidade"></select><h1 id="tit">Coleta · Hoje</h1><div class="s" id="sub"></div></header>
 <div class="lock" id="lock" hidden><b>Acesso restrito</b><div style="color:var(--mut);font-size:13px">Digite a senha para ver a coleta.</div><input id="pw" type="password" autocomplete="current-password" placeholder="Senha"><button id="go">Entrar</button><div class="err" id="err"></div></div>
 <div class="wrap" id="app" hidden>
  <div class="dias"><button id="prev" aria-label="Dia anterior">‹</button><button id="diaBtn" class="db" aria-label="Escolher dia no calendário"></button><button id="next" aria-label="Dia seguinte">›</button></div><div class="cal" id="cal" hidden></div><div class="past" id="past" hidden></div>
- <div class="vt" id="vt"><button data-v="col" class="on">Coleta</button><button data-v="ate">Aterro</button></div>
+ <div class="vt" id="vt"><button data-v="col" class="on">🗺️ Rotas</button><button data-v="cam">🚛 Caminhões</button><button data-v="ate">🏭 Aterro</button></div>
  <button class="rbtn" id="relBtn">📄 Relatório do fechamento (dia e turnos)</button>
- <div id="vCol"><div class="tabs" id="tabsT"></div>
- <div class="sum" id="sum"></div><div id="list"></div></div>
- <div id="vAte" hidden><div class="sum" id="aSum" style="grid-template-columns:repeat(2,1fr)"></div><div id="aList"></div></div>
- <div class="note">Dados da INLOG, atualizados a cada 5 minutos (a página recarrega sozinha). Use o calendário para ver dias anteriores (guardados por mais de um ano). Saída/retorno à garagem calculados pelo GPS do veículo (raio de 300 m da garagem). Aterro: entrada e saída pelo GPS, num raio de 400 m do aterro; velocidade máxima = maior velocidade registrada pelo GPS lá dentro. Via de acesso = vias próximas ao aterro (em Trindade, Av. dos Angicos e a estrada a oeste das lagoas; nas outras cidades, até 2,5 km do aterro), até 40 min antes da entrada e depois da saída. Garagem e aterro de cada cidade vêm do cadastro de referências da INLOG. Percentual executado = percentual da própria INLOG. "Realizado (só GPS)" = setor que a INLOG deixou em 0% (sem controle aberto), mas em que o rastreador mostra um caminhão coletando (devagar, dentro do polígono e cobrindo pelo menos 20% da rota programada, com cerca de 30 min dentro do setor). "Pelo GPS" = parte da rota programada por onde o GPS do caminhão passou devagar (até 25 km/h, a até 25 m da rua); mostra o andamento sem esperar a INLOG atualizar, mas é uma medição nossa, não o número oficial. "Ir até o veículo" abre o GPS do celular até a última posição enviada pelo veículo (só para setores em execução); "Ir ao ponto inicial" leva ao primeiro ponto de GPS do veículo dentro do setor depois da entrada. No mapa aparecem o rastreio do GPS do veículo (azul, o mesmo caminho que a INLOG mostra) e a rota programada da INLOG: verde = trechos que a INLOG já deu como cumpridos, vermelho = falta executar. Os botões acima do mapa ligam e desligam cada um.</div>
+ <div class="tabs" id="tabsT"></div>
+ <div id="vCol"><div id="placar"></div><div class="chips" id="chips"></div><div id="podio"></div><div class="ord" id="ord"></div><div id="list"></div></div>
+ <div id="vCam" hidden><div class="sum" id="cSum"></div><div id="cList"></div></div>
+ <div id="vAte" hidden><div class="sum" id="aSum"></div><div id="aList"></div></div>
+ <details class="como"><summary>Como ler os dados</summary>
+  <p><b>Base: o rastreio dos caminhões.</b> O percentual principal de cada rota é a parte da rota programada por onde o GPS do caminhão passou coletando (devagar, até 25 km/h, a até 25 m da rua). O percentual da INLOG aparece embaixo, só como referência, porque ela costuma atrasar ou registrar errado.</p>
+  <p><b>Em execução</b>: o GPS mostra o caminhão no setor nos últimos 30 minutos (ou indo descarregar no aterro no meio da rota, por até 2 horas). <b>Finalizada</b>: o caminhão saiu do setor com 95% ou mais da rota feita. <b>Incompleta</b>: saiu do setor com menos de 95% (voltou à garagem, foi para outra rota ou ficou mais de 30 minutos fora). <b>Aguardando</b>: nenhum caminhão começou a rota.</p>
+  <p><b>Cores</b>: verde 95% ou mais (meta), amarelo 80 a 94%, vermelho abaixo de 80%. O traço em cada barra marca a meta de 95%.</p>
+  <p><b>Caminhões</b>: ranking pela média das rotas que cada caminhão executou no turno, com a linha do tempo e o rastreio no mapa (▶ reproduz o percurso). <b>Aterro</b>: entrada e saída pelo GPS num raio de 400 m do aterro. Saída e retorno à garagem pelo GPS (300 m da garagem). Dados atualizados a cada 5 minutos; a página recarrega sozinha. Dias anteriores ficam guardados por mais de um ano.</p>
+ </details>
 </div>
 <div id="sheet"><div class="hd"><button id="back">‹ Voltar</button><h2 id="shT"></h2></div><div id="map"></div><div class="ft" id="shF"></div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-let D=null,DIA=null,IDX={},VIEW='col';let TURNO=null,OPEN=new Set();
+let D=null,DIA=null,IDX={},VIEW='col';let TURNO=null,OPEN=new Set(),FILT='all',ORD='setor';const PREV={};
 const CIDADES=[{s:'trindade',n:'Trindade',p:'',c:1},{s:'anapolis',n:'Anápolis'},{s:'araguari',n:'Araguari'},{s:'ariquemes',n:'Ariquemes'},{s:'cidade-ocidental',n:'Cidade Ocidental'},{s:'jandira',n:'Jandira'},{s:'jatai',n:'Jataí'},{s:'luziania',n:'Luziânia'},{s:'santa-vitoria',n:'Santa Vitória'},{s:'valparaiso',n:'Valparaíso'}];
 let CX=CIDADES[0];{let q=new URLSearchParams(location.search).get('c'),m=null;try{m=localStorage.getItem('tc_cid')}catch(e){}CX=CIDADES.find(c=>c.s===q)||CIDADES.find(c=>c.s===m)||CIDADES[0]}
 const PRE=()=>CX.p!=null?CX.p:'c/'+CX.s+'/';
-const TLAB={MATUTINO:'Manhã',MANHA:'Manhã',DIURNO:'Diurno',INTEGRAL:'Integral',VESPERTINO:'Tarde',TARDE:'Tarde',NOTURNO:'Noturno',OUTROS:'Outros'},TORD=Object.keys(TLAB);
-const tno=s=>s.turno||'OUTROS';
-function turnos(){const T=[...new Set(D.S.map(tno))].sort((a,b)=>(TORD.indexOf(a)+99*(TORD.indexOf(a)<0))-(TORD.indexOf(b)+99*(TORD.indexOf(b)<0)));
- if(!T.includes(TURNO)){const h=new Date().getHours(),at=T.filter(t=>D.S.some(s=>tno(s)===t&&s.sit==='ATIVO'));TURNO=(h>=18||h<4)&&T.includes('NOTURNO')?'NOTURNO':at[0]||T.find(t=>h>=14?['VESPERTINO','TARDE'].includes(t):['MATUTINO','MANHA','DIURNO'].includes(t))||T[0]||null}
- const el=document.getElementById('tabsT');el.innerHTML=T.map(t=>`<button data-t="${t}" class="${t===TURNO?'on':''}">${TLAB[t]||t}</button>`).join('');el.style.display=T.length<2?'none':'';
- el.querySelectorAll('button').forEach(b=>b.onclick=()=>{TURNO=b.dataset.t;render()})}
-function cidades(){const sel=document.getElementById('cid');sel.innerHTML=CIDADES.map(c=>`<option value="${c.s}"${c===CX?' selected':''}>${c.n}</option>`).join('');document.getElementById('cons').href='consulta.html?c='+CX.s;
- sel.onchange=()=>{CX=CIDADES.find(c=>c.s===sel.value)||CIDADES[0];try{localStorage.setItem('tc_cid',CX.s)}catch(e){}const u=new URL(location.href);u.searchParams.set('c',CX.s);history.replaceState(null,'',u);
-  document.getElementById('cons').href='consulta.html?c='+CX.s;D=null;DIA=null;IDX={};HOJE=null;TURNO=null;OPEN.clear();document.getElementById('cal').hidden=true;document.getElementById('list').innerHTML='<div class="note">Carregando…</div>';document.getElementById('sum').innerHTML='';carregar()}}
+const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf=(v,d=0)=>Number(v).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 const hm=s=>{const h=Math.floor(s/3600),m=Math.round(s%3600/60);return h?`${h}h ${String(m).padStart(2,'0')}min`:`${m} min`};
-const SIT={ATIVO:['Em execução','st-a'],AGUARDANDO:['Aguardando','st-w'],EXECUTADO:['Finalizado','st-e'],GPS:['Realizado (só GPS)','st-g']};
-// Setor que a INLOG fechou com menos de 90%: o GPS diz se o caminhão foi ao aterro, deu apoio em outra rota, voltou a coletar ou encerrou de fato
+const hora=m=>{m=((Math.round(m)%1440)+1440)%1440;return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`};
 const hh=t=>t?String(t).replace(':','h'):'';
-const encerrou=s=>s.sit==='EXECUTADO'&&s.pct<90&&(!s.pe||!s.pe.t||s.pe.t==='garagem');
-const stEnc=s=>{const p=s.pe||{};switch(p.t){case 'apoio':return [`Apoio na rota ${p.r}${p.h?' desde '+hh(p.h):''}`,'st-g'];case 'indo':return ['A caminho do aterro','st-e'];case 'aterro':return [p.agora?`No aterro desde ${hh(p.h)}`:`Foi ao aterro às ${hh(p.h)}`,'st-e'];case 'setor':return ['Voltou ao setor após o aterro','st-a'];case 'coleta':return ['Ainda coletando no setor','st-a'];default:return ['Encerrado sem concluir','st-r']}};
-const peTxt=s=>{const p=s.pe||{};switch(p.t){case 'apoio':return `coletou na rota ${p.r} a partir das ${hh(p.h)}`;case 'indo':return `seguindo para o aterro (a ${String(p.km).replace('.',',')} km às ${hh(p.u)})`;case 'aterro':return p.agora?`no aterro desde ${hh(p.h)}`:`foi ao aterro às ${hh(p.h)}`;case 'setor':return `foi ao aterro e voltou ao setor às ${hh(p.h)}`;case 'coleta':return `continuou coletando no setor (GPS até ${hh(p.u)})`;case 'garagem':return `${p.a?'foi ao aterro às '+hh(p.a)+' e ':''}voltou à garagem às ${hh(p.h)}`;default:return 'sem GPS depois do fechamento'}};
-function render(){if(VIEW==='ate'){renderAte();return}renderCol()}
-function renderAte(){const [y,mo,da]=D.dia.split('-'),hj=!DIA;cabecalho(y,mo,da,hj);
+const mins=t=>{const m=/(\d{1,2}):(\d{2})/.exec(t||'');return m?+m[1]*60+ +m[2]:null};
+const nv=v=>String(v||'').trim().replace(/\s+/g,' ');
+
+// ------------------------------------------------ turnos (expediente informado; demais cidades: turno da INLOG)
+const TLAB={M:'Manhã',T:'Tarde',N:'Noite',MATUTINO:'Manhã',MANHA:'Manhã',DIURNO:'Diurno',INTEGRAL:'Integral',VESPERTINO:'Tarde',TARDE:'Tarde',NOTURNO:'Noturno',OUTROS:'Outros',X:'Sem turno'},TORD=Object.keys(TLAB);
+const CO_VAL=[{k:'M',ini:420,fim:960,sab:[420,660]},{k:'T',ini:960,fim:1320,sab:[960,1320]}];
+const EXP={luziania:[{k:'M',ini:420,fim:920,sab:[360,860]},{k:'N',ini:1140,fim:1640,sab:[960,1460]}],'cidade-ocidental':CO_VAL,valparaiso:CO_VAL};
+function janela(s){let a=mins(s.saida),b=mins(s.volta);const g=(s.gps||[]).map(x=>[mins(x[1]),mins(x[2])]).filter(x=>x[0]!=null);
+ if(a==null&&g.length)a=Math.min(...g.map(x=>x[0]<240?x[0]+1440:x[0]));if(a==null)a=mins(s.rast0);if(a==null)return null;if(a<240)a+=1440;
+ if(b==null&&g.length)b=Math.max(...g.map(x=>x[1]==null?0:x[1]<240?x[1]+1440:x[1]));if(b==null||b<=0)b=a+60;while(b<a)b+=1440;return [a,b]}
+let TNC=null,TND=null;
+function tno(s){if(TND!==D){TND=D;TNC=new Map()}if(TNC.has(s))return TNC.get(s);let k=s.turno||'OUTROS';const cfg=EXP[CX.s];
+ if(cfg){const [y,mo,da]=D.dia.split('-'),sab=new Date(+y,mo-1,+da).getDay()===6,W=cfg.map(T=>({k:T.k,ini:sab?T.sab[0]:T.ini,fim:sab?T.sab[1]:T.fim})),J=janela(s);
+  if(J){let best=-1;W.forEach(T=>{const o=Math.min(J[1],T.fim)-Math.max(J[0],T.ini);if(o>best){best=o;k=T.k}});if(best<=0)k=W.reduce((a,T)=>{const d=J[0]<T.ini?T.ini-J[0]:Math.max(0,J[0]-T.fim);return !a||d<a.d?{d,k:T.k}:a},null).k}
+  else{const l=String(s.turno||'').toUpperCase();k=['MATUTINO','MANHA','DIURNO'].includes(l)?W[0].k:['VESPERTINO','TARDE','NOTURNO'].includes(l)?W[W.length-1].k:'X'}}
+ TNC.set(s,k);return k}
+function turnos(){const T=[...new Set(D.S.map(tno))].sort((a,b)=>(TORD.indexOf(a)+99*(TORD.indexOf(a)<0))-(TORD.indexOf(b)+99*(TORD.indexOf(b)<0)));
+ if(!T.includes(TURNO)){const h=new Date().getHours(),at=T.filter(t=>D.S.some(s=>tno(s)===t&&stK(s)==='ex'));TURNO=at[0]||((h>=17||h<4)?T[T.length-1]:T[0])||null}
+ const el=document.getElementById('tabsT');el.innerHTML=T.map(t=>`<button data-t="${t}" class="${t===TURNO?'on':''}">${TLAB[t]||t}</button>`).join('');el.style.display=T.length<2||VIEW==='ate'?'none':'';
+ el.querySelectorAll('button').forEach(b=>b.onclick=()=>{TURNO=b.dataset.t;FILT='all';render()})}
+function cidades(){const sel=document.getElementById('cid');sel.innerHTML=CIDADES.map(c=>`<option value="${c.s}"${c===CX?' selected':''}>${c.n}</option>`).join('');document.getElementById('cons').href='consulta.html?c='+CX.s;
+ sel.onchange=()=>{CX=CIDADES.find(c=>c.s===sel.value)||CIDADES[0];try{localStorage.setItem('tc_cid',CX.s)}catch(e){}const u=new URL(location.href);u.searchParams.set('c',CX.s);history.replaceState(null,'',u);
+  document.getElementById('cons').href='consulta.html?c='+CX.s;D=null;DIA=null;IDX={};HOJE=null;TURNO=null;FILT='all';OPEN.clear();document.getElementById('cal').hidden=true;document.getElementById('list').innerHTML='<div class="note">Carregando…</div>';document.getElementById('placar').innerHTML='';carregar()}}
+
+// ------------------------------------------------ status pelo rastreio dos caminhões
+const META=95,LIM=80;
+const pg=s=>s.pgps!=null?s.pgps:(s.pct||0);          // percentual que vale: o do rastreio (GPS); sem rota programada, o da INLOG
+const nivel=v=>v>=META?'ok':v>=LIM?'wa':'ba';
+const HEX={ok:'#1f9d55',wa:'#e0a100',ba:'#d64541',ex:'#2a6fdb',ag:'#b5bfba'};
+const CT={ok:'var(--okT)',wa:'var(--waT)',ba:'var(--baT)'};
+const ST={ex:'Em execução',fi:'Finalizada',in:'Incompleta',ag:'Aguardando'};
+const aoVivo=()=>!DIA&&D&&D.at!=='final';
+function idade(t){const a=mins(D&&D.at),b=mins(t);if(a==null||b==null)return null;const m=/(\d{1,2})\/(\d{1,2})/.exec(t||'');if(m){const [y,mo,da]=D.dia.split('-').map(Number);if(![0,1].some(k=>{const x=new Date(y,mo-1,da+k);return x.getDate()===+m[1]&&x.getMonth()+1===+m[2]}))return 9999}let d=a-b;if(d<-120)d+=1440;return d}   // minutos desde a hora t (hora de outro dia: 9999)
+let SGC=null,SGD=null;
+function segVeic(){if(SGD===D)return SGC;SGD=D;SGC={};D.S.forEach(s=>(s.gps||[]).forEach(g=>{let a=mins(g[1]),b=mins(g[2]);if(a==null)return;if(a<240)a+=1440;if(b==null)b=a;if(b<240)b+=1440;while(b<a)b+=1440;const k=nv(g[0]);(SGC[k]=SGC[k]||[]).push({s:s.s,a,b})}));return SGC}
+function outraRota(s){const M=segVeic();for(const g of s.gps||[]){const L=M[nv(g[0])]||[],meu=L.filter(x=>x.s===s.s);if(!meu.length)continue;const a0=Math.min(...meu.map(x=>x.a));
+ if(L.some(x=>x.s!==s.s&&x.a>a0+5&&(idade(hora(x.b))??99)<=30))return true}return false}   // o caminhão começou outra rota depois desta e está nela agora
+function dentroAnel(p,r){let ok=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const [y1,x1]=r[i],[y2,x2]=r[j];if((y1>p[0])!==(y2>p[0])&&p[1]<(x2-x1)*(p[0]-y1)/(y2-y1)+x1)ok=!ok}return ok}
+function pertoAnel(p,r,m){const C=Math.cos(p[0]*Math.PI/180);for(let i=0;i<r.length;i++){const a=r[i],b=r[(i+1)%r.length],bx=(b[1]-a[1])*111320*C,by=(b[0]-a[0])*110574,px=(p[1]-a[1])*111320*C,py=(p[0]-a[0])*110574,L2=bx*bx+by*by,t=L2?Math.max(0,Math.min(1,(px*bx+py*by)/L2)):0;if(Math.hypot(px-t*bx,py-t*by)<=m)return true}return false}
+function rastro(s){   // pelo rastreio: 'ex' no setor | 'ainda' indo para o setor | 'saiu' | 'nunca' (não entrou) | null (sem dados)
+ if(s.zf===undefined&&s.uset===undefined){if(!s.pos||!(s.ring||[]).length)return null;const d=idade(s.ult);if(d!=null&&d>30)return 'saiu';return s.ring.some(r=>dentroAnel(s.pos,r)||pertoAnel(s.pos,r,150))?'ex':'saiu'}
+ const du=s.uset!=null?idade(s.uset):null;
+ if(s.zf==='setor'&&du!=null&&du<=15)return 'ex';
+ if(s.zf==='garagem'||s.volta)return s.uset==null?'nunca':'saiu';
+ if(outraRota(s))return s.uset==null?'nunca':'saiu';
+ if(du!=null&&du<=30)return 'ex';
+ if(du!=null&&s.atp&&du<=120)return 'ex';           // foi descarregar no aterro no meio da rota
+ if(s.uset==null)return (idade(s.ugps)??99)<=30?'ainda':'nunca';
+ return 'saiu'}
+function stK(s){if(s._kD===D)return s._k;let k;const saiu=s.sit!=='AGUARDANDO'||s.pct>0||(s.gps||[]).length>0;
+ if(!saiu)k='ag';
+ else if(aoVivo()){let r;
+  if(s.sit==='GPS'){const d=idade(s.fim_gps);r=d!=null&&d<=30?'ex':'saiu'}
+  else if(s.pe&&s.sit==='EXECUTADO')r=(s.pe.t==='coleta'||s.pe.t==='setor')&&(idade(s.pe.u)??99)<=30?'ex':'saiu';
+  else{r=rastro(s);if(r==null)r=s.sit==='ATIVO'?'ex':'saiu'}
+  k=r==='ex'||r==='ainda'?'ex':r==='nunca'?(pg(s)>0?'in':'ag'):pg(s)>=META?'fi':'in'}
+ else k=pg(s)>=META?'fi':'in';
+ s._kD=D;s._k=k;return k}
+const stTxt=s=>ST[stK(s)];
+const encerrou=s=>stK(s)==='in';
+const corS=s=>{const k=stK(s);return k==='ag'?HEX.ag:k==='ex'?HEX.ex:HEX[nivel(pg(s))]};
+
+// ------------------------------------------------ caminhões (rastreio)
+const d36=t=>{const v=t?t.split(',').map(x=>parseInt(x,36)):[],o=[];let a=0,b=0;for(let i=0;i+1<v.length;i+=2){a+=v[i];b+=v[i+1];o.push([a/1e5,b/1e5])}return o};
+const compr=P=>{let k=0;for(let i=1;i<P.length;i++){const C=Math.cos(P[i][0]*Math.PI/180);k+=Math.hypot((P[i][0]-P[i-1][0])*110574,(P[i][1]-P[i-1][1])*111320*C)}return k/1000};
+function caminhoes(S){const M=new Map();
+ const add=(v,s)=>{const k=nv(v);if(!k||k==='?')return null;if(!M.has(k))M.set(k,{v:k,S:new Map(),seg:[],km:0});const t=M.get(k);t.S.set(s.s,s);return t};
+ S.forEach(s=>{(s.veic||[]).forEach(v=>add(v,s));(s.gps||[]).forEach(g=>{const t=add(g[0],s);if(!t)return;const P=d36(g[3]);let a=mins(g[1]),b=mins(g[2]);if(a!=null&&a<240)a+=1440;if(b!=null&&b<240)b+=1440;if(a!=null&&b!=null)while(b<a)b+=1440;t.seg.push({s:s.s,a,b,P,h1:g[1],h2:g[2]});t.km+=compr(P)})});
+ const L=[...M.values()].map(t=>{const Ss=[...t.S.values()].sort((a,b)=>String(a.s).localeCompare(String(b.s),'pt-BR',{numeric:true})),F=Ss.filter(s=>stK(s)!=='ag'&&(s.gps||[]).some(g=>nv(g[0])===t.v)||stK(s)!=='ag'&&!(s.gps||[]).length);
+  t.Ss=Ss;t.media=F.length?F.reduce((a,s)=>a+pg(s),0)/F.length:null;t.nF=F.length;t.ex=Ss.find(s=>stK(s)==='ex');t.seg.sort((a,b)=>(a.a??0)-(b.a??0));
+  const A=t.seg.filter(x=>x.a!=null);t.ini=A.length?Math.min(...A.map(x=>x.a)):null;t.fim=A.length?Math.max(...A.map(x=>x.b??x.a)):null;return t});
+ L.sort((a,b)=>(b.media??-1)-(a.media??-1)||b.nF-a.nF||b.km-a.km);return L}
+const MED=['🥇','🥈','🥉'];
+
+// ------------------------------------------------ telas
+function render(){cabecalho();turnos();if(VIEW==='ate')renderAte();else if(VIEW==='cam')renderCam();else renderCol()}
+function cabecalho(){const [y,mo,da]=D.dia.split('-'),hj=!DIA;document.getElementById('tit').textContent='Coleta '+CX.n+' · '+(hj?'Hoje':`${da}/${mo}`);document.title='Coleta '+CX.n;
+ document.getElementById('sub').innerHTML=hj?`${D.at==='final'?'':'<span class="live"></span>'}${da}/${mo}/${y} · ${D.at==='final'?'dia encerrado':'ao vivo · atualizado às '+esc(D.at)}`:`${WD[new Date(+y,mo-1,+da).getDay()]}, ${da}/${mo}/${y} · ${D.at==='final'?'dia encerrado':'parcial até '+esc(D.at)}`;
+ const pa=document.getElementById('past');pa.hidden=hj;pa.textContent=hj?'':'Você está vendo um dia anterior. Use o calendário ou a seta › para voltar a Hoje.'}
+function conta(el,para,suf=''){if(!el)return;const de=+(el.dataset.de||0),t0=performance.now(),dur=900;el.dataset.de=para;const f=t=>{const k=Math.min(1,(t-t0)/dur),v=de+(para-de)*(1-Math.pow(1-k,3));el.textContent=nf(v)+suf;if(k<1)requestAnimationFrame(f)};requestAnimationFrame(f)}
+function anima(){requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('[data-w]').forEach(e=>{e.style.width=e.dataset.w+'%'})))}
+function renderCol(){const S0=D.S.filter(s=>tno(s)===TURNO),S=S0.slice();
+ const K={ex:0,fi:0,in:0,ag:0};S.forEach(s=>K[stK(s)]++);const F=S.filter(s=>stK(s)!=='ag');
+ const med=F.length?F.reduce((a,s)=>a+pg(s),0)/F.length:0,inl=F.length?F.reduce((a,s)=>a+(s.pct||0),0)/F.length:null,naMeta=F.filter(s=>pg(s)>=META).length,km=S.reduce((a,s)=>a+(s.dist||0),0);
+ const nv0=nivel(med),R=44,CC=2*Math.PI*R,lvl=!F.length?['Turno ainda não começou','ag']:med>=META?['🏆 Na meta','ok']:med>=LIM?['⚠️ Atenção','wa']:['🔻 Abaixo da meta','ba'];
+ const ord=S.slice().sort((a,b)=>String(a.s).localeCompare(String(b.s),'pt-BR',{numeric:true}));
+ const pl=document.getElementById('placar');const ant=pl.querySelector('#rgV');const deAnt=ant?ant.dataset.de:0;
+ pl.innerHTML=`<div class="placar"><div class="anel"><svg viewBox="0 0 104 104"><circle cx="52" cy="52" r="${R}" fill="none" stroke="var(--line)" stroke-width="11"/><circle id="rgA" cx="52" cy="52" r="${R}" fill="none" stroke="${F.length?HEX[nv0]:HEX.ag}" stroke-width="11" stroke-linecap="round" stroke-dasharray="${CC}" stroke-dashoffset="${CC*(1-(PREV._rg||0)/100)}"${F.length&&med>0?'':' stroke-opacity="0"'}/><line x1="${52+R-8}" y1="52" x2="${52+R+8}" y2="52" stroke="var(--ink)" stroke-width="2.5" opacity=".55" transform="rotate(${360*META/100} 52 52)"/></svg><div class="v"><b id="rgV" data-de="${deAnt||0}" style="color:${F.length?CT[nv0]:'var(--mut)'}">0%</b><small>RASTREIO</small></div></div>
+  <div class="pinfo"><div class="t">🎯 Meta 95% · ${naMeta} de ${S.length} rota${S.length===1?'':'s'}<span class="lv stp ${lvl[1]==='ok'?'fi':lvl[1]==='ag'?'ag':'in '+lvl[1]}">${lvl[0]}</span></div>
+  <div class="trilha">${ord.map(s=>`<i title="${esc(s.s)} · ${stTxt(s)}${stK(s)!=='ag'?' · '+nf(pg(s))+'%':''}" style="background:${corS(s)}"></i>`).join('')}</div>
+  <div class="s2">${inl!=null?`<span>INLOG <b>${nf(inl)}%</b></span>`:''}${aoVivo()?`<span>em execução <b>${K.ex}</b></span>`:''}<span>rodados <b>${nf(km,0)} km</b></span></div></div></div>`;
+ PREV._rg=Math.min(100,med);if(F.length)conta(document.getElementById('rgV'),med,'%');else document.getElementById('rgV').textContent='—';requestAnimationFrame(()=>requestAnimationFrame(()=>{const c=document.getElementById('rgA');if(c)c.style.strokeDashoffset=CC*(1-Math.min(100,med)/100)}));
+ const ch=[['all','Todas',S.length,'var(--ink)'],['ex',ST.ex,K.ex,HEX.ex],['fi',ST.fi,K.fi,HEX.ok],['in',ST.in,K.in,HEX.ba],['ag',ST.ag,K.ag,HEX.ag]];
+ if(FILT!=='all'&&!K[FILT])FILT='all';
+ document.getElementById('chips').innerHTML=ch.map(c=>`<button class="chip ${FILT===c[0]?'on':''}" data-f="${c[0]}"${c[0]!=='all'&&!c[2]?' style="opacity:.55"':''}>${c[0]!=='all'?`<i style="background:${c[3]}"></i>`:''}${c[1]} <b>${c[2]}</b></button>`).join('');
+ document.querySelectorAll('#chips .chip').forEach(b=>b.onclick=()=>{FILT=b.dataset.f;renderCol()});
+ const TR=caminhoes(S).filter(t=>t.media!=null);
+ document.getElementById('podio').innerHTML=TR.length>=2?`<div class="ptit"><span>🏁 Pódio do turno</span><a id="verCam">ranking completo ›</a></div><div class="podio">${TR.slice(0,3).map((t,i)=>`<button class="pd p${i+1}" data-v="${esc(t.v)}"><div class="m">${MED[i]}</div><b>${esc(t.v)}</b><div class="p" style="color:${CT[nivel(t.media)]}">${nf(t.media)}%</div><small>${t.nF} rota${t.nF>1?'s':''} · ${nf(t.km,0)} km</small></button>`).join('')}</div>`:'';
+ const vc=document.getElementById('verCam');if(vc)vc.onclick=()=>irView('cam');
+ document.querySelectorAll('#podio .pd').forEach(b=>b.onclick=()=>openTruck(b.dataset.v));
+ document.getElementById('ord').innerHTML=`<span>${FILT==='all'?S.length+' rotas':(K[FILT]+' '+ST[FILT].toLowerCase())}</span><label>Ordenar <select id="ordS"><option value="setor">por setor</option><option value="sit">por situação</option><option value="mais">maior %</option><option value="menos">menor %</option></select></label>`;
+ const os=document.getElementById('ordS');os.value=ORD;os.onchange=()=>{ORD=os.value;renderCol()};
+ const OS={ex:0,in:1,ag:2,fi:3};let L=S.filter(s=>FILT==='all'||stK(s)===FILT);
+ L.sort(ORD==='mais'?(a,b)=>pg(b)-pg(a):ORD==='menos'?(a,b)=>pg(a)-pg(b):ORD==='sit'?(a,b)=>OS[stK(a)]-OS[stK(b)]||pg(a)-pg(b):(a,b)=>String(a.s).localeCompare(String(b.s),'pt-BR',{numeric:true}));
+ document.getElementById('list').innerHTML=L.length?L.map(card).join(''):'<div class="vazio">Nenhuma rota nessa situação.</div>';
+ document.querySelectorAll('.sh').forEach(h=>h.onclick=()=>{const c=h.parentNode.dataset.c;OPEN.has(c)?OPEN.delete(c):OPEN.add(c);h.parentNode.classList.toggle('open')});
+ document.querySelectorAll('.btn[data-m]').forEach(b=>b.onclick=e=>{e.stopPropagation();openMap(b.dataset.m)});
+ document.querySelectorAll('.btn[data-t]').forEach(b=>b.onclick=e=>{e.stopPropagation();openTruck(b.dataset.t)});
+ S.forEach(s=>{PREV[s.s]=Math.min(100,pg(s))});anima()}
+function card(s){const k=stK(s),p=pg(s),lv=nivel(p),g=s.pgps!=null,ag=k==='ag',w0=PREV[s.s]??0,ve=[...new Set([...(s.veic||[]),...(s.gps||[]).map(x=>nv(x[0]))].map(nv))].filter(v=>v&&v!=='?');
+ const cl=`k-${k} l-${lv}`,cor=ag?HEX.ag:HEX[lv];
+ return `<div class="sec ${cl} ${OPEN.has(s.s)?'open':''}" data-c="${esc(s.s)}">
+  <div class="sh"><span class="nm">${esc(s.s)}</span><div class="mid"><span class="stp ${k} ${k==='in'?(lv==='ok'?'wa':lv):''}"><span class="dt"></span>${ST[k]}${k!=='ag'&&p>=META?'<span class="bdg">🏆 meta</span>':''}</span>${ve.length?`<span class="vei">🚛 ${esc(ve.join(' · '))}</span>`:''}</div>
+  <span class="pc" style="color:${ag?'var(--mut)':CT[lv]}">${ag?'—':nf(p)+'%'}<small>${g?'RASTREIO':'INLOG'}</small></span><span class="ch">▼</span></div>
+  <div class="bar"><span data-w="${ag?0:Math.min(100,p)}" style="width:${ag?0:w0}%;background:${cor}"></span><i class="meta"></i></div>
+  ${g?`<div class="ib"><small>INLOG</small><div class="bar"><span data-w="${Math.min(100,s.pct||0)}" style="width:0"></span></div><b>${nf(s.pct||0)}%</b></div>`:'<div style="height:6px"></div>'}
+  <div class="det"><span class="pill">${esc(s.s)} · ${ST[k]}</span>
+   <div class="kv"><span>Pelo rastreio (GPS)</span><b style="color:${CT[lv]}">${g?nf(s.pgps)+'%':'sem rota programada'}</b></div>
+   <div class="kv"><span>Pela INLOG</span><b>${s.sit==='GPS'?'não registrou (0%)':nf(s.pct||0)+'%'}</b></div>
+   <div class="kv"><span>Saída da garagem</span><b>${s.saida||(s.rast0?'GPS desde '+s.rast0:'—')}</b></div>
+   <div class="kv"><span>Entrada no setor</span><b>${s.entrada||'—'}</b></div>
+   ${s.uset&&k!=='ag'?`<div class="kv"><span>${k==='ex'?'No setor (último ponto do GPS)':'Saiu do setor (último ponto no setor)'}</span><b>${s.uset}</b></div>`:s.sit==='GPS'&&s.fim_gps?`<div class="kv"><span>Último ponto coletando no setor</span><b>${s.fim_gps}</b></div>`:''}
+   ${s.volta?`<div class="kv"><span>Retorno à garagem</span><b>${s.volta}</b></div>`:''}
+   ${(ve.length?ve:['—']).map((v,i)=>`<div class="kv"><span>Caminhão ${i+1}</span><b>${esc(v)}</b></div>`).join('')}
+   <div class="kv"><span>Distância percorrida</span><b>${s.dist?nf(s.dist,1)+' km':'—'}</b></div>
+   <div class="kv"><span>Velocidade média</span><b>${s.vel?nf(s.vel,1)+' km/h':'—'}</b></div>
+   <div class="kv"><span>Paradas longas no setor (5 min ou mais)</span><b>${(s.par||[]).length?(s.par.length+' · '+hm(s.stop)):'nenhuma'}</b></div>
+   ${(s.par||[]).map(p=>`<a class="par" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p[3]},${p[4]}"><span>${p[0]} às ${p[1]}</span><b>${hm(p[2])}</b><i>ver local ›</i></a>`).join('')}
+   <div class="kv"><span>Última posição</span><b>${s.ult||'—'}</b></div>
+   ${s.ini?`<div class="kv"><span>Início da rota (1º ponto no setor)</span><b>${s.ini[2]}</b></div>`:''}
+   ${navBtns(s)}
+   ${(s.lin||[]).length||(s.gps||[]).length?`<button class="btn" data-m="${esc(s.s)}">🗺️ Ver rota e rastreio no mapa</button>`:''}
+   ${ve.length===1&&(s.gps||[]).length?`<button class="btn" data-t="${esc(ve[0])}">🚛 Ver o percurso do caminhão ${esc(ve[0])}</button>`:''}</div></div>`}
+function renderCam(){const S=D.S.filter(s=>tno(s)===TURNO),T=caminhoes(S),cs=document.getElementById('cSum');
+ const ex=T.filter(t=>t.ex).length,km=T.reduce((a,t)=>a+t.km,0),M=T.filter(t=>t.media!=null),med=M.length?M.reduce((a,t)=>a+t.media,0)/M.length:null;
+ cs.innerHTML=`<div><b>${T.length}</b><small>caminhões no turno</small></div><div><b style="color:var(--exT)">${ex}</b><small>${aoVivo()?'em rota agora':'—'}</small></div><div><b>${nf(km,0)} km</b><small>rodados (rastreio)</small></div><div><b style="color:${med==null?'var(--mut)':CT[nivel(med)]}">${med==null?'—':nf(med)+'%'}</b><small>média das rotas dos caminhões</small></div>`;
+ if(!T.length){document.getElementById('cList').innerHTML='<div class="vazio">Nenhum caminhão com rastreio neste turno.</div>';return}
+ const A=T.filter(t=>t.ini!=null);let t0=A.length?Math.floor(Math.min(...A.map(t=>t.ini))/60)*60:360,t1=A.length?Math.ceil(Math.max(...A.map(t=>t.fim))/60)*60:1380;if(t1-t0<120)t1=t0+120;
+ const X=m=>Math.max(0,Math.min(100,(m-t0)/(t1-t0)*100)),marcas=[];for(let m=t0;m<=t1;m+=Math.max(60,Math.round((t1-t0)/6/60)*60))marcas.push(m);
+ let r=0;document.getElementById('cList').innerHTML=T.map(t=>{const rk=t.media!=null?r++:null;const segs=t.seg.filter(x=>x.a!=null);
+  return `<div class="trk"><div class="th"><span class="rk">${rk!=null&&rk<3?MED[rk]:rk!=null?(rk+1)+'º':'·'}</span><div><b>${esc(t.v)}</b><div class="tst ${t.ex&&aoVivo()?'ex':''}">${t.ex&&aoVivo()?'● em rota agora · setor '+esc(t.ex.s):t.fim!=null?'encerrou às '+hora(t.fim):'aguardando saída'}</div></div>
+   <span class="pc" style="color:${t.media==null?'var(--mut)':CT[nivel(t.media)]}">${t.media==null?'—':nf(t.media)+'%'}<small>MÉDIA</small></span></div>
+   ${segs.length?`<div class="tl">${segs.map(x=>{const s=t.S.get(x.s);return `<i style="left:${X(x.a)}%;width:${Math.max(.8,X(x.b??x.a)-X(x.a))}%;background:${corS(s)}" title="${esc(x.s)} · ${x.h1}–${x.h2}">${esc(x.s)}</i>`}).join('')}</div><div class="tlx">${marcas.map(m=>`<span>${hora(m).slice(0,2)}h</span>`).join('')}</div>`:''}
+   <div class="tsec">${t.Ss.map(s=>{const k=stK(s),lv=nivel(pg(s));return `<span class="stp ${k} ${k==='in'?(lv==='ok'?'wa':lv):''}">${esc(s.s)} · ${k==='ag'?ST.ag.toLowerCase():nf(pg(s))+'%'}</span>`}).join('')}</div>
+   <div class="tk">${t.ini!=null?`<span>⏱ <b>${hora(t.ini)}–${hora(t.fim)}</b> (${hm((t.fim-t.ini)*60)})</span>`:''}<span>🛣️ <b>${nf(t.km,1)} km</b></span><span>✅ <b>${t.Ss.filter(s=>stK(s)==='fi').length}</b> de ${t.Ss.length} na meta</span></div>
+   ${segs.length?`<button class="btn" data-t="${esc(t.v)}">🗺️ Ver rastreio e reproduzir percurso</button>`:''}</div>`}).join('');
+ document.querySelectorAll('#cList .btn[data-t]').forEach(b=>b.onclick=()=>openTruck(b.dataset.t))}
+function renderAte(){
  const A=D.aterro;document.getElementById('aSum').innerHTML='';
  if(!A){document.getElementById('aList').innerHTML=`<div class="note">${'aterro' in D&&D.aterro===null&&CX.p==null?'O aterro desta cidade ainda não está cadastrado na INLOG.':'Os dados do aterro deste dia ainda estão sendo preparados. Volte em alguns minutos.'}</div>`;return}
  const tot=A.reduce((a,x)=>a+x.dur,0),vm=A.reduce((a,x)=>Math.max(a,x.vmax),0),va=A.reduce((a,x)=>Math.max(a,x.vida||0,x.vvolta||0),0),vv=v=>v==null?'—':nf(v)+' km/h';
  document.getElementById('aSum').innerHTML=`<div><b>${A.length}</b><small>entradas no aterro</small></div><div><b>${A.length?hm(Math.round(tot/A.length)):'—'}</b><small>tempo médio dentro</small></div><div><b>${A.length?nf(vm)+' km/h':'—'}</b><small>maior velocidade dentro do aterro</small></div><div><b>${va?nf(va)+' km/h':'—'}</b><small>maior velocidade na via de acesso</small></div>`;
  const dt=x=>{const [d,h]=x.split(' '),[,m,a]=d.split('-');return [`${a}/${m}`,h]};
  document.getElementById('aList').innerHTML=A.length?A.map(x=>{const i=dt(x.ini),f=dt(x.fim);return `<div class="at"><div class="h"><b>${x.v}</b><span style="color:var(--mut);font-size:12.5px">Setor ${x.s.join(', ')}</span><span class="tag">${hm(x.dur)}</span></div><div class="g"><div><span>Data de início</span><b>${i[0]}</b></div><div><span>Hora de início</span><b>${i[1]}</b></div><div><span>Data de fim</span><b>${f[0]}</b></div><div><span>Hora de fim</span><b>${f[1]}</b></div><div><span>Duração dentro do aterro</span><b>${hm(x.dur)}</b></div><div><span>Velocidade máxima dentro</span><b>${nf(x.vmax)} km/h</b></div><div><span>Vel. máx. na via de acesso · chegada</span><b>${'vida' in x?vv(x.vida):'—'}</b></div><div><span>Vel. máx. na via de acesso · saída</span><b>${'vvolta' in x?vv(x.vvolta):'—'}</b></div></div></div>`}).join(''):'<div class="note">Nenhuma entrada no aterro registrada neste dia.</div>';}
-function cabecalho(y,mo,da,hj){document.getElementById('tit').textContent='Coleta '+CX.n+' · '+(hj?'Hoje':`${da}/${mo}`);document.title='Coleta '+CX.n;
- document.getElementById('sub').textContent=hj?`${da}/${mo}/${y} · atualizado às ${D.at}`:`${WD[new Date(+y,mo-1,+da).getDay()]}, ${da}/${mo}/${y} · ${D.at==='final'?'dia encerrado':'parcial até '+D.at}`;
- const pa=document.getElementById('past');pa.hidden=hj;pa.textContent=hj?'':'Você está vendo um dia anterior. Use o calendário ou a seta › para voltar a Hoje.'}
-function renderCol(){
- const [y,mo,da]=D.dia.split('-'),hj=!DIA;document.getElementById('tit').textContent='Coleta '+CX.n+' · '+(hj?'Hoje':`${da}/${mo}`);document.title='Coleta '+CX.n;turnos();
- document.getElementById('sub').textContent=hj?`${da}/${mo}/${y} · atualizado às ${D.at}`:`${WD[new Date(+y,mo-1,+da).getDay()]}, ${da}/${mo}/${y} · ${D.at==='final'?'dia encerrado':'parcial até '+D.at}`;
- const pa=document.getElementById('past');pa.hidden=hj;pa.textContent=hj?'':'Você está vendo um dia anterior. Escolha "Hoje" para voltar ao acompanhamento ao vivo.';
- const S=D.S.filter(s=>tno(s)===TURNO);
- const inc=S.filter(encerrou).length,at=S.filter(s=>s.sit==='ATIVO').length,ag=S.filter(s=>s.sit==='AGUARDANDO').length,av=S.reduce((a,s)=>a+s.pct,0)/S.length,ng=S.filter(s=>s.sit==='GPS').length,gv=S.some(s=>s.pgps!=null)?S.reduce((a,s)=>a+(s.pgps??s.pct),0)/S.length:null;
- document.getElementById('sum').innerHTML=`<div><b>${nf(av)}%</b><small>média executada${gv!=null?` (INLOG)</small><small style="display:block;color:#2a5bd7;font-weight:700">GPS ${nf(gv)}%`:''}</small></div><div><b>${at}</b><small>em execução</small></div><div><b>${ag}</b><small>${hj?'aguardando saída':'não saíram'}</small></div>${ng?`<div style="grid-column:1/-1;border-color:#2a5bd7;background:rgba(42,91,215,.1)"><b style="font-size:15px;color:#2a5bd7">${ng} setor${ng>1?'es':''} realizado${ng>1?'s':''} só pelo GPS</b><small>A INLOG não registrou, mas o rastreador mostra o caminhão coletando no setor</small></div>`:''}${inc?`<div style="grid-column:1/-1;border-color:var(--red);background:var(--redbg)"><b style="font-size:15px;color:var(--red)">${inc} setor${inc>1?'es':''} encerrado${inc>1?'s':''} sem concluir</b><small>A INLOG fechou com menos de 90% e o GPS não mostra ida ao aterro, apoio em outra rota nem volta ao setor</small></div>`:''}`;
- document.getElementById('list').innerHTML=S.map(s=>{const fe=s.sit==='EXECUTADO'&&s.pct<90,inc=encerrou(s);const st=fe?stEnc(s):(SIT[s.sit]||[s.sit,'st-w']);return `<div class="sec ${OPEN.has(s.s)?'open':''}" data-c="${s.s}">
-  <div class="sh"><span class="tag">RSU</span><span class="nm">${s.s}<span class="sit ${st[1]}">${st[0]}</span></span><span class="pc"${inc?' style="color:var(--red)"':s.sit==='GPS'?' style="color:#2a5bd7"':''}>${s.sit==='GPS'?nf(s.pgps)+'%<small>GPS</small>':nf(s.pct)+'%<small>INLOG</small>'}</span><span class="ch">▼</span></div>
-  ${s.sit==='GPS'?'':`<div class="bar"><span style="width:${s.pct}%${inc?';background:var(--red)':''}"></span></div>`}
-  ${s.pgps!=null?`<div class="gb"${s.sit==='GPS'?' style="margin-top:2px"':''}><small>${s.sit==='GPS'?'GPS · INLOG 0%':'Pelo GPS'}</small><div class="bar"><span style="width:${Math.min(100,s.pgps)}%"></span></div><b>${nf(s.pgps)}%</b></div>`:''}
-  <div class="det"><span class="pill">${s.s}</span>
-   <div class="kv"><span>Saída da garagem</span><b>${s.saida||(s.rast0?'GPS desde '+s.rast0:'—')}</b></div>
-   ${s.sit==='GPS'?`<div class="kv"><span>Registro na INLOG</span><b style="color:var(--amb)">não registrado (0%)</b></div><div class="kv"><span>Coleta vista no GPS</span><b>${s.entrada||'—'} às ${s.fim_gps||'—'}</b></div>`:''}
-   <div class="kv"><span>Entrada no setor</span><b>${s.entrada||'—'}</b></div>
-   ${fe&&s.pe?`<div class="kv"><span>INLOG fechou o setor</span><b>${hh(s.pe.f)} · ${nf(s.pct)}%</b></div><div class="kv"><span>Depois, pelo GPS${s.pe.v?' ('+s.pe.v+')':''}</span><b>${peTxt(s)}</b></div>`:''}
-   ${s.volta?`<div class="kv"><span>Retorno à garagem</span><b>${s.volta}</b></div>`:''}
-   ${(s.veic.length?s.veic:['—']).map((v,i)=>`<div class="kv"><span>Veículo ${i+1}</span><b>${v}</b></div>`).join('')}
-   <div class="kv"><span>Distância percorrida</span><b>${s.dist?nf(s.dist,1)+' km':'—'}</b></div>
-   <div class="kv"><span>Velocidade média</span><b>${s.vel?nf(s.vel,1)+' km/h':'—'}</b></div>
-   <div class="kv"><span>Paradas longas no setor (5 min ou mais)</span><b>${s.sit==='GPS'?'—':(s.par||[]).length?(s.par.length+' · '+hm(s.stop)):'nenhuma'}</b></div>
-   ${(s.par||[]).map(p=>`<a class="par" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p[3]},${p[4]}"><span>${p[0]} às ${p[1]}</span><b>${hm(p[2])}</b><i>ver local ›</i></a>`).join('')}
-   <div class="kv"><span>Última posição</span><b>${s.ult||'—'}</b></div>
-   ${s.ini?`<div class="kv"><span>Início da rota (1º ponto no setor)</span><b>${s.ini[2]}</b></div>`:''}
-   ${navBtns(s)}
-   ${(s.lin||[]).length||(s.gps||[]).length?`<button class="btn" data-m="${s.s}">Ver no mapa</button>`:''}</div></div>`}).join('');
- document.querySelectorAll('.sh').forEach(h=>h.onclick=()=>{const c=h.parentNode.dataset.c;OPEN.has(c)?OPEN.delete(c):OPEN.add(c);render()});
- document.querySelectorAll('.btn[data-m]').forEach(b=>b.onclick=e=>{e.stopPropagation();openMap(b.dataset.m)});
-}
+function irView(v){VIEW=v;document.querySelectorAll('#vt button').forEach(x=>x.classList.toggle('on',x.dataset.v===v));document.getElementById('vCol').hidden=v!=='col';document.getElementById('vCam').hidden=v!=='cam';document.getElementById('vAte').hidden=v!=='ate';if(D)render();window.scrollTo({top:0})}
+
+// ------------------------------------------------ mapas
 const rotaAte=p=>`https://www.google.com/maps/dir/?api=1&destination=${p[0]},${p[1]}&travelmode=driving`;
-const vivo=s=>!DIA&&s.sit==='ATIVO'&&s.pos;
-const navVei=s=>vivo(s)?`<a class="nav" target="_blank" rel="noopener" href="${rotaAte(s.pos)}">🚛 Ir até o veículo<small>posição das ${s.ult||'—'}</small></a>`:'';
+const vivo=s=>aoVivo()&&stK(s)==='ex'&&s.pos;
+const navVei=s=>vivo(s)?`<a class="nav" target="_blank" rel="noopener" href="${rotaAte(s.pos)}">🚛 Ir até o caminhão<small>posição das ${esc(s.ult||'—')}</small></a>`:'';
 const navIni=s=>s.ini?`<a class="nav n2" target="_blank" rel="noopener" href="${rotaAte(s.ini)}">🏁 Ir ao ponto inicial<small>começou às ${s.ini[2]}</small></a>`:'';
 const navBtns=s=>navVei(s)+navIni(s);
-const d36=t=>{const v=t?t.split(',').map(x=>parseInt(x,36)):[],o=[];let a=0,b=0;for(let i=0;i+1<v.length;i+=2){a+=v[i];b+=v[i+1];o.push([a/1e5,b/1e5])}return o};
 const VIS={g:true,r:true};let GL={};
-let map,lay;
-function openMap(c){const s=D.S.find(x=>x.s===c);document.getElementById('sheet').classList.add('open');
+const AZUL='#1f3fbf',VERM='#d13b30';
+function faltam(s){   // trechos da rota programada sem passagem do caminhão pelo rastreio (a mais de 25 m do GPS)
+ const lin=s.lin||[];if(!lin.length)return [];const C=Math.cos(((lin[0][1][0]||[-16])[0])*Math.PI/180),xy=p=>[p[1]*111320*C,p[0]*110574],T=25,G=new Map();
+ (s.gps||[]).forEach(g=>{const P=d36(g[3]).map(xy);for(let j=0;j+1<P.length;j++){const a=P[j],b=P[j+1],d=Math.hypot(b[0]-a[0],b[1]-a[1]);if(d>1500)continue;const n=Math.max(1,Math.ceil(d/10));for(let k=0;k<=n;k++){const q=[a[0]+(b[0]-a[0])*k/n,a[1]+(b[1]-a[1])*k/n],key=Math.floor(q[0]/T)+'_'+Math.floor(q[1]/T);(G.get(key)||G.set(key,[]).get(key)).push(q)}}});
+ const perto=q=>{const cx=Math.floor(q[0]/T),cy=Math.floor(q[1]/T);for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++){const L=G.get((cx+i)+'_'+(cy+j));if(L)for(const p of L)if(Math.hypot(p[0]-q[0],p[1]-q[1])<=T)return true}return false};
+ const out=[];lin.forEach(l=>{const P=l[1];let cur=null;for(let j=0;j+1<P.length;j++){const A=xy(P[j]),B=xy(P[j+1]),d=Math.hypot(B[0]-A[0],B[1]-A[1]),n=Math.max(1,Math.ceil(d/10));
+  for(let k=0;k<n;k++){const fm=(k+.5)/n,q=[A[0]+(B[0]-A[0])*fm,A[1]+(B[1]-A[1])*fm],pt=f=>[P[j][0]+(P[j+1][0]-P[j][0])*f,P[j][1]+(P[j+1][1]-P[j][1])*f];
+   if(perto(q)){cur=null;continue}if(!cur){cur=[pt(k/n)];out.push(cur)}cur.push(pt((k+1)/n))}}});
+ return out}
+let map,lay,ANIM=null;
+const PAL=['#1f3fbf','#e8590c','#7b2cbf','#0b7285','#c2255c','#2b8a3e','#5f3dc4','#a61e4d'];
+function mapa(){document.getElementById('sheet').classList.add('open');if(ANIM){cancelAnimationFrame(ANIM.r);ANIM=null}
  if(!map){map=L.map('map');const tl=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri',keepBuffer:4}).addTo(map);
   tl.on('tileerror',e=>{const t=e.tile,n=(+t.dataset.r||0)+1;if(n<4){t.dataset.r=n;setTimeout(()=>{t.src=t.src.split('?_r=')[0]+'?_r='+n},600*n)}});
   lay=L.layerGroup().addTo(map);try{new ResizeObserver(()=>map.invalidateSize({pan:false})).observe(document.getElementById('map'))}catch(e){}}
- lay.clearLayers();
- s.ring.forEach(r=>L.polygon(r,{color:'#555',weight:1.5,dashArray:'5 4',fill:false}).addTo(lay));
+ lay.clearLayers()}
+const icone=(h,c='ini',z=24)=>L.divIcon({className:'',html:`<div class="${c}">${h}</div>`,iconSize:[z,z],iconAnchor:[z/2,z/2]});
+function openMap(c){const s=D.S.find(x=>x.s===c);mapa();
+ (s.ring||[]).forEach(r=>L.polygon(r,{color:'#555',weight:1.5,dashArray:'5 4',fill:false}).addTo(lay));
  GL={r:L.layerGroup(),g:L.layerGroup()};
- const L0=s.lin||[];L.polyline(L0.filter(l=>!l[0]).map(l=>l[1]),{color:'#d13b30',weight:4,opacity:.75}).addTo(GL.r);
- L.polyline(L0.filter(l=>l[0]).map(l=>l[1]),{color:'#1a8a4a',weight:4.5,opacity:.75}).addTo(GL.r);
+ const FT=faltam(s);if(FT.length)L.polyline(FT,{color:VERM,weight:5,opacity:.85}).bindTooltip('Falta coletar (sem passagem do caminhão)',{sticky:true}).addTo(GL.r);
  const T=(s.gps||[]).map(g=>[g[0],g[1],g[2],d36(g[3])]);
- T.forEach(g=>{L.polyline(g[3],{color:'#fff',weight:6,opacity:.8}).addTo(GL.g);L.polyline(g[3],{color:'#1f3fbf',weight:3,opacity:.95}).bindTooltip(`Rastreio ${g[0]} · ${g[1]}–${g[2]}`,{sticky:true}).addTo(GL.g)});
+ T.forEach(g=>{L.polyline(g[3],{color:'#fff',weight:6,opacity:.8}).addTo(GL.g);L.polyline(g[3],{color:AZUL,weight:3,opacity:.95}).bindTooltip(`Rastreio ${esc(g[0])} · ${g[1]}–${g[2]}`,{sticky:true}).addTo(GL.g)});
  if(VIS.r)GL.r.addTo(lay);if(VIS.g)GL.g.addTo(lay);
  (s.par||[]).forEach(p=>L.circleMarker([p[3],p[4]],{radius:9,color:'#fff',weight:2,fillColor:'#e08a00',fillOpacity:1}).bindTooltip(`Parada ${p[0]}–${p[1]} · ${hm(p[2])}`).addTo(lay));
- if(s.ini)L.marker(s.ini.slice(0,2),{icon:L.divIcon({className:'',html:'<div class="ini">🏁</div>',iconSize:[24,24],iconAnchor:[12,12]}),zIndexOffset:500}).bindPopup(`<b>Início da rota · ${s.ini[2]}</b><br>Primeiro ponto do veículo dentro do setor.${navIni(s)}`).addTo(lay);
- if(vivo(s))L.marker(s.pos,{icon:L.divIcon({className:'',html:'<div class="truck">🚛</div>',iconSize:[26,26],iconAnchor:[13,13]}),zIndexOffset:1000}).bindPopup(`<b>${(s.veic||[]).join(', ')||'Veículo'}</b><br>Posição das ${s.ult||'—'}${navVei(s)}`).addTo(lay);
- document.getElementById('shT').textContent='Setor '+s.s+' · INLOG '+nf(s.pct)+'%'+(s.pgps!=null?' · GPS '+nf(s.pgps)+'%':'');
- document.getElementById('shF').innerHTML=`${(s.veic||[]).join(', ')} · última posição ${s.ult||'—'}${T.length?`<div class="lt"><button data-l="g" class="${VIS.g?'on':''}">Rastreio do GPS</button><button data-l="r" class="${VIS.r?'on':''}">Rota programada</button></div>`:''}<div class="leg">${T.length?`<span><i style="background:#1f3fbf"></i>Rastreio GPS (${T.map(g=>g[0]+' '+g[1]+'–'+g[2]).join(', ')})</span>`:''}<span><i style="background:#1a8a4a"></i>Rota: executado</span><span><i style="background:#d13b30"></i>Rota: falta executar</span><span><i style="background:#e08a00;width:10px;height:10px;border-radius:50%"></i>Parada longa</span>${s.ini?'<span><i style="background:#1a8a4a;width:10px;height:10px;border-radius:50%"></i>Início da rota</span>':''}${vivo(s)?'<span><i style="background:#2a78d6;width:10px;height:10px;border-radius:50%"></i>Veículo (toque para ir até ele)</span>':''}</div>${navBtns(s)}`;
- document.querySelectorAll('.lt button').forEach(b=>b.onclick=()=>{const k=b.dataset.l;VIS[k]=!VIS[k];b.classList.toggle('on',VIS[k]);VIS[k]?GL[k].addTo(lay):lay.removeLayer(GL[k])});
- setTimeout(()=>{map.invalidateSize();const bb=L.latLngBounds(((s.lin||[]).length?s.lin.flatMap(l=>l[1]):s.ring.flat()).concat(s.ini?[s.ini.slice(0,2)]:[],vivo(s)?[s.pos]:[])),bz=bb.pad(.5);T.forEach(g=>g[3].forEach(p=>{if(bz.contains(p))bb.extend(p)}));map.fitBounds(bb,{padding:[24,24]})},30);}
-document.querySelectorAll('#vt button').forEach(b=>b.onclick=()=>{VIEW=b.dataset.v;document.querySelectorAll('#vt button').forEach(x=>x.classList.toggle('on',x===b));document.getElementById('vCol').hidden=VIEW!=='col';document.getElementById('vAte').hidden=VIEW!=='ate';if(D)render()});
-document.getElementById('back').onclick=()=>document.getElementById('sheet').classList.remove('open');
+ if(s.ini)L.marker(s.ini.slice(0,2),{icon:icone('🏁'),zIndexOffset:500}).bindPopup(`<b>Início da rota · ${s.ini[2]}</b><br>Primeiro ponto do caminhão dentro do setor.${navIni(s)}`).addTo(lay);
+ if(vivo(s))L.marker(s.pos,{icon:icone('🚛','truck',28),zIndexOffset:1000}).bindPopup(`<b>${esc((s.veic||[]).join(', ')||'Caminhão')}</b><br>Posição das ${esc(s.ult||'—')}${navVei(s)}`).addTo(lay);
+ document.getElementById('shT').textContent='Setor '+s.s+' · '+stTxt(s)+' · rastreio '+(s.pgps!=null?nf(s.pgps)+'%':'—')+' · INLOG '+nf(s.pct||0)+'%';
+ document.getElementById('shF').innerHTML=`${esc((s.veic||[]).join(', '))} · última posição ${esc(s.ult||'—')}<div class="lt">${T.length?`<button data-l="g" class="${VIS.g?'on':''}">Rastreio (azul)</button>`:''}<button data-l="r" class="${VIS.r?'on':''}">Falta coletar (vermelho)</button></div><div class="leg">${T.length?`<span><i style="background:${AZUL}"></i>Por onde o caminhão passou (${T.map(g=>esc(g[0])+' '+g[1]+'–'+g[2]).join(', ')})</span>`:''}<span><i style="background:${VERM}"></i>Rota programada sem passagem do caminhão${FT.length?' · '+nf(FT.reduce((a,l)=>a+compr(l),0),1)+' km':''}</span><span><i style="background:#e08a00;width:10px;height:10px;border-radius:50%"></i>Parada longa</span>${s.ini?'<span><i style="background:#1a8a4a;width:10px;height:10px;border-radius:50%"></i>Início da rota</span>':''}${vivo(s)?'<span><i style="background:#2a78d6;width:10px;height:10px;border-radius:50%"></i>Caminhão (toque para ir até ele)</span>':''}</div>${navBtns(s)}`;
+ document.querySelectorAll('.lt button[data-l]').forEach(b=>b.onclick=()=>{const k=b.dataset.l;VIS[k]=!VIS[k];b.classList.toggle('on',VIS[k]);VIS[k]?GL[k].addTo(lay):lay.removeLayer(GL[k])});
+ setTimeout(()=>{map.invalidateSize();const pts=((s.lin||[]).length?s.lin.flatMap(l=>l[1]):(s.ring||[]).flat()).concat(s.ini?[s.ini.slice(0,2)]:[],vivo(s)?[s.pos]:[]);if(!pts.length&&T.length)pts.push(...T[0][3]);if(!pts.length)return;const bb=L.latLngBounds(pts),bz=bb.pad(.5);T.forEach(g=>g[3].forEach(p=>{if(bz.contains(p))bb.extend(p)}));map.fitBounds(bb,{padding:[24,24]})},30)}
+function openTruck(v){const t=caminhoes(D.S.filter(s=>tno(s)===TURNO)).find(x=>x.v===v)||caminhoes(D.S).find(x=>x.v===v);if(!t)return;mapa();
+ const ordS=[...new Set(t.seg.map(x=>x.s))],cor=()=>AZUL,pts=[];
+ t.Ss.forEach(s=>{(s.ring||[]).forEach(r=>{const pg0=L.polygon(r,{color:'#555',weight:1.5,dashArray:'5 4',fillOpacity:.05}).addTo(lay);pg0.bindTooltip(esc(s.s),{permanent:true,direction:'center',className:'lbl'})});{const FT=faltam(s);if(FT.length)L.polyline(FT,{color:VERM,weight:5,opacity:.8}).bindTooltip(`Setor ${esc(s.s)} · falta coletar`,{sticky:true}).addTo(lay)}});
+ t.seg.forEach(x=>{if(x.P.length<2)return;L.polyline(x.P,{color:'#fff',weight:7,opacity:.85}).addTo(lay);L.polyline(x.P,{color:cor(x.s),weight:3.5,opacity:.95}).bindTooltip(`Setor ${esc(x.s)} · ${x.h1}–${x.h2}`,{sticky:true}).addTo(lay);pts.push(...x.P)});
+ const S1=t.seg.find(x=>x.P.length),S2=[...t.seg].reverse().find(x=>x.P.length);
+ if(S1)L.marker(S1.P[0],{icon:icone('🏁'),zIndexOffset:500}).bindTooltip(`Início · ${S1.h1}`).addTo(lay);
+ const vv=t.ex&&aoVivo()&&t.ex.pos?t.ex.pos:null;
+ if(vv)L.marker(vv,{icon:icone('🚛','truck',28),zIndexOffset:1000}).bindPopup(`<b>${esc(t.v)}</b><br>Posição das ${esc(t.ex.ult||'—')}<a class="nav" target="_blank" rel="noopener" href="${rotaAte(vv)}">🚛 Ir até o caminhão</a>`).addTo(lay);
+ else if(S2)L.marker(S2.P[S2.P.length-1],{icon:icone('⛳'),zIndexOffset:500}).bindTooltip(`Último ponto · ${S2.h2}`).addTo(lay);
+ document.getElementById('shT').textContent=`🚛 ${t.v} · ${t.media==null?'—':nf(t.media)+'%'} · ${nf(t.km,1)} km`;
+ document.getElementById('shF').innerHTML=`<div class="lt"><button class="play" id="play">▶ Reproduzir percurso</button></div><div class="leg"><span><i style="background:${AZUL}"></i>Por onde o caminhão passou</span><span><i style="background:${VERM}"></i>Falta coletar nas rotas dele</span></div><div class="tlg">${t.Ss.map(s=>{const sg=t.seg.filter(x=>x.s===s.s);return `<div><i style="background:${corS(s)};width:10px;height:10px;border-radius:50%"></i><span>Setor <b style="margin:0">${esc(s.s)}</b> · ${sg.length?sg.map(x=>x.h1+'–'+x.h2).join(', '):'sem rastreio'} · ${stTxt(s)}</span><b style="color:${stK(s)==='ag'?'var(--mut)':CT[nivel(pg(s))]}">${stK(s)==='ag'?'—':nf(pg(s))+'%'}</b></div>`}).join('')}</div>`;
+ document.getElementById('play').onclick=()=>replay(t,cor);
+ setTimeout(()=>{map.invalidateSize();const all=pts.concat(vv?[vv]:[]);if(!all.length)t.Ss.forEach(s=>(s.ring||[]).forEach(r=>all.push(...r)));if(all.length)map.fitBounds(L.latLngBounds(all),{padding:[24,24]})},30)}
+function replay(t,cor){const b=document.getElementById('play');if(ANIM){cancelAnimationFrame(ANIM.r);lay.removeLayer(ANIM.m);lay.removeLayer(ANIM.l);ANIM=null;b.textContent='▶ Reproduzir percurso';return}
+ const P=[];t.seg.forEach(x=>{const n=x.P.length;x.P.forEach((p,i)=>P.push({p,t:x.a!=null&&x.b!=null?x.a+(x.b-x.a)*i/Math.max(1,n-1):null,s:x.s}))});if(P.length<2)return;
+ const ac=[0];for(let i=1;i<P.length;i++){const C=Math.cos(P[i].p[0]*Math.PI/180);ac.push(ac[i-1]+Math.hypot((P[i].p[0]-P[i-1].p[0])*110574,(P[i].p[1]-P[i-1].p[1])*111320*C))}
+ const tot=ac[ac.length-1]||1,dur=Math.min(30000,Math.max(9000,tot/3)),m=L.marker(P[0].p,{icon:icone('🚛','truck',28),zIndexOffset:2000}).addTo(lay).bindTooltip('',{permanent:true,direction:'top',offset:[0,-14],className:'lbl'}),l=L.polyline([P[0].p],{color:'#111',weight:2,opacity:.6,dashArray:'2 5'}).addTo(lay);
+ const t0=performance.now();let i=1;b.textContent='■ Parar';
+ const f=n=>{const d=Math.min(1,(n-t0)/dur)*tot;while(i<P.length-1&&ac[i]<d)i++;const a=P[i-1],c=P[i],k=ac[i]>ac[i-1]?(d-ac[i-1])/(ac[i]-ac[i-1]):1,q=[a.p[0]+(c.p[0]-a.p[0])*Math.max(0,Math.min(1,k)),a.p[1]+(c.p[1]-a.p[1])*Math.max(0,Math.min(1,k))];
+  m.setLatLng(q);l.addLatLng(q);const hr=a.t!=null&&c.t!=null?hora(a.t+(c.t-a.t)*Math.max(0,Math.min(1,k))):'';m.setTooltipContent(`${hr} · setor ${esc(c.s)}`);
+  if(d<tot)ANIM.r=requestAnimationFrame(f);else{b.textContent='▶ Reproduzir de novo';ANIM.r=null;const mm=ANIM;ANIM=null;setTimeout(()=>{if(!ANIM){lay.removeLayer(mm.m);lay.removeLayer(mm.l)}},4000)}};
+ ANIM={m,l,r:requestAnimationFrame(f)}}
+document.querySelectorAll('#vt button').forEach(b=>b.onclick=()=>irView(b.dataset.v));
+document.getElementById('back').onclick=()=>{if(ANIM){cancelAnimationFrame(ANIM.r);ANIM=null}document.getElementById('sheet').classList.remove('open')};
+
+// ------------------------------------------------ dados (criptografados) e calendário
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 const BASE='https://raw.githubusercontent.com/torrelimpagyn/trindade-coleta/dados/',WD=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 async function baixar(arq){arq=PRE()+arq;try{const r=await fetch(BASE+arq+'?t='+Date.now(),{cache:'no-store'});if(r.ok)return await r.json()}catch(e){}if(arq.includes('hist/'))throw new Error('sem dados');const r=await fetch(arq+'?t='+Date.now(),{cache:'no-store'});return await r.json()}
@@ -171,20 +355,20 @@ const comDados=()=>Object.keys(IDX).filter(d=>['final','parcial'].includes(st(ID
 async function indice(){try{IDX=(await baixar('hist/index.json')).dias||{}}catch(e){IDX={}}if(D&&!DIA)HOJE=D.dia;botoes();if(!document.getElementById('cal').hidden)desenhar()}
 function rotulo(){const b=document.getElementById('diaBtn');if(!DIA){b.innerHTML='📅 Hoje <small>· ao vivo</small>';return}const [y,m,a]=DIA.split('-');b.innerHTML=`📅 ${WD[new Date(+y,m-1,+a).getDay()]}, ${a}/${m}/${y}`}
 function botoes(){const L=comDados();rotulo();const i=DIA?L.indexOf(DIA):L.length;document.getElementById('prev').disabled=i<=0;document.getElementById('next').disabled=!DIA}
-function cor(v){if(!v||typeof v!=='object'||v.m==null)return 'c-x';return v.m>=90?'c-g':v.m>=70?'c-a':'c-r'}
+function cor(v){if(!v||typeof v!=='object'||v.m==null)return 'c-x';return v.m>=META?'c-g':v.m>=LIM?'c-a':'c-r'}
 function desenhar(){const c=document.getElementById('cal');const y=CAL.getFullYear(),m=CAL.getMonth();
  const L=comDados(),min=L[0]||HOJE,hj=HOJE||iso(new Date());
  const ini=new Date(y,m,1),off=ini.getDay(),n=new Date(y,m+1,0).getDate();
  let h=`<div class="ch"><button data-n="-1" ${min&&iso(new Date(y,m,0))<min?'disabled':''}>‹</button><b>${MES[m]} ${y}</b><button data-n="1" ${iso(new Date(y,m+1,1))>hj?'disabled':''}>›</button></div><div class="cg">`+['D','S','T','Q','Q','S','S'].map(x=>`<i>${x}</i>`).join('')+'<span></span>'.repeat(off);
  for(let d=1;d<=n;d++){const k=iso(new Date(y,m,d)),v=IDX[k],eh=k===hj,ok=eh||['final','parcial'].includes(st(v));
-  const tip=eh?'Hoje':v&&typeof v==='object'&&v.m!=null?`${v.m}% de média · ${v.n} setores${v.i?` · ${v.i} sem concluir`:''}`:st(v)==='vazio'?(v&&v.e?'falha ao ler a INLOG (será refeito)':'sem coleta registrada na INLOG'):ok?'':'sem dados';
+  const tip=eh?'Hoje':v&&typeof v==='object'&&v.m!=null?`${v.m}% de média · ${v.n} setores${v.i?` · ${v.i} incompletos`:''}`:st(v)==='vazio'?(v&&v.e?'falha ao ler a INLOG (será refeito)':'sem coleta registrada na INLOG'):ok?'':'sem dados';
   h+=`<button class="d ${ok?cor(eh?null:v):'off'} ${(DIA||hj)===k?'sel':''} ${eh?'hj':''}" ${ok?`data-d="${eh?'':k}"`:'disabled'} title="${tip}">${d}${ok&&!eh&&v&&v.m!=null?`<small>${v.m}%</small>`:eh?'<small>hoje</small>':''}</button>`}
- h+=`</div><div class="leg2"><span><i class="c-g"></i>90% ou mais</span><span><i class="c-a"></i>70 a 89%</span><span><i class="c-r"></i>abaixo de 70%</span></div><div class="cn">Média executada do dia (todos os setores que saíram). Os dias anteriores vão sendo carregados aos poucos.</div>`;
+ h+=`</div><div class="leg2"><span><i class="c-g"></i>95% ou mais</span><span><i class="c-a"></i>80 a 94%</span><span><i class="c-r"></i>abaixo de 80%</span></div><div class="cn">Média do dia (setores que saíram). Os dias anteriores vão sendo carregados aos poucos.</div>`;
  c.innerHTML=h;
  c.querySelectorAll('.ch button').forEach(b=>b.onclick=()=>{CAL=new Date(y,m+ +b.dataset.n,1);desenhar()});
  c.querySelectorAll('.d[data-d]').forEach(b=>b.onclick=()=>{c.hidden=true;irPara(b.dataset.d)})}
 document.getElementById('diaBtn').onclick=()=>{const c=document.getElementById('cal');if(!c.hidden){c.hidden=true;return}const [y,m]=(DIA||HOJE||iso(new Date())).split('-');CAL=new Date(+y,m-1,1);desenhar();c.hidden=false};
-async function irPara(d){DIA=d||null;OPEN.clear();botoes();document.getElementById('list').innerHTML='<div class="note">Carregando…</div>';await carregar();botoes()}
+async function irPara(d){DIA=d||null;OPEN.clear();FILT='all';botoes();document.getElementById('list').innerHTML='<div class="note">Carregando…</div>';await carregar();botoes()}
 document.getElementById('prev').onclick=()=>{const L=comDados(),i=DIA?L.indexOf(DIA):L.length;if(i>0)irPara(L[i-1])};
 document.getElementById('next').onclick=()=>{const L=comDados(),i=L.indexOf(DIA);irPara(i>=0&&i<L.length-1?L[i+1]:'')};
 async function abrir(pw){const e=await baixar(DIA?'hist/'+DIA+'.enc.json':'dados.enc.json');
@@ -193,8 +377,8 @@ async function abrir(pw){const e=await baixar(DIA?'hist/'+DIA+'.enc.json':'dados
  let raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(e.iv)},k,b64(e.dados));if(e.z)raw=await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();return JSON.parse(new TextDecoder().decode(raw))}
 async function carregar(){const pw=localStorage.getItem('tc_pw');if(!pw){document.getElementById('lock').hidden=false;return}
  try{D=await abrir(pw);document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;render();if(!DIA){HOJE=D.dia;if(!Object.keys(IDX).length)indice();else botoes()}}
- catch(e){if(DIA||e.name!=='OperationError'){document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;document.getElementById('tit').textContent='Coleta '+CX.n;document.getElementById('sub').textContent='';document.getElementById('tabsT').innerHTML='';document.getElementById('tabsT').style.display='none';document.getElementById('sum').innerHTML='';document.getElementById('list').innerHTML='<div class="note">'+(DIA?'Não há dados guardados desse dia.':'Os dados desta cidade ainda não estão disponíveis. Volte em alguns minutos.')+'</div>';return}localStorage.removeItem('tc_pw');document.getElementById('app').hidden=true;document.getElementById('lock').hidden=false;document.getElementById('err').textContent='Senha incorreta ou dados indisponíveis.'}}
-document.getElementById('relBtn').onclick=async()=>{const b=document.getElementById('relBtn');if(!D)return;if(!window.relatorio){b.disabled=true;try{await new Promise((ok,er)=>{const s=document.createElement('script');s.src='relatorio.js?v=3';s.onload=ok;s.onerror=er;document.head.appendChild(s)})}catch(e){b.disabled=false;return}b.disabled=false}window.relatorio(D,CX)};
+ catch(e){if(DIA||e.name!=='OperationError'){document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;document.getElementById('tit').textContent='Coleta '+CX.n;document.getElementById('sub').textContent='';document.getElementById('tabsT').innerHTML='';document.getElementById('tabsT').style.display='none';document.getElementById('placar').innerHTML='';document.getElementById('chips').innerHTML='';document.getElementById('podio').innerHTML='';document.getElementById('ord').innerHTML='';document.getElementById('list').innerHTML='<div class="note">'+(DIA?'Não há dados guardados desse dia.':'Os dados desta cidade ainda não estão disponíveis. Volte em alguns minutos.')+'</div>';return}localStorage.removeItem('tc_pw');document.getElementById('app').hidden=true;document.getElementById('lock').hidden=false;document.getElementById('err').textContent='Senha incorreta ou dados indisponíveis.'}}
+document.getElementById('relBtn').onclick=async()=>{const b=document.getElementById('relBtn');if(!D)return;if(!window.relatorio){b.disabled=true;try{await new Promise((ok,er)=>{const s=document.createElement('script');s.src='relatorio.js?v=4';s.onload=ok;s.onerror=er;document.head.appendChild(s)})}catch(e){b.disabled=false;return}b.disabled=false}window.relatorio(D,CX)};
 document.getElementById('go').onclick=()=>{try{localStorage.setItem('tc_pw',document.getElementById('pw').value)}catch(e){}carregar()};
 document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
 cidades();carregar();setInterval(()=>{if(!DIA)indice()},900000);setInterval(()=>{if(D&&!DIA&&!document.getElementById('sheet').classList.contains('open'))carregar()},120000);
