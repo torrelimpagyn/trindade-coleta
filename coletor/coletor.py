@@ -569,7 +569,7 @@ def apos_fechar(s, o, fin, setores, gar, ater, hoje):
     """Classifica o que o veículo fez depois que a INLOG fechou o setor incompleto:
     apoio (outra rota), aterro, indo ao aterro, voltou/continuou no setor ou garagem (encerrou de fato)."""
     t_fin = dt.datetime.fromisoformat(fin[0])
-    fim = t_fin + dt.timedelta(hours=8)
+    fim = t_fin + dt.timedelta(hours=6)
     if hoje:
         fim = min(fim, dt.datetime.now(TZ).replace(tzinfo=None))
     gmt = lambda t: t.replace(tzinfo=TZ).astimezone(dt.timezone.utc).strftime("%Y-%m-%d%%20%H:%M:%S")
@@ -596,7 +596,13 @@ def apos_fechar(s, o, fin, setores, gar, ater, hoje):
         return None
 
     eps = episodios(pts, zona)
-    apoio = next((e for e in eps if e["z"].startswith("apoio:")), None)
+    g = next((i for i, e in enumerate(eps) if e["z"] == "garagem" and (e["fim"] - e["ini"]).total_seconds() >= 600), None)
+    if g is not None:   # voltou à garagem: o turno acabou ali (o que vem depois é outro turno)
+        eps = eps[:g + 1]
+    por_cod = {x["s"]: x for x in setores}
+    # apoio: o veículo tem controle na outra rota (INLOG) ou ficou 20 min ou mais coletando nela (GPS)
+    apoio = next((e for e in eps if e["z"].startswith("apoio:") and (fin[2] in (por_cod.get(e["z"][6:]) or {}).get("veic", [])
+                                                                        or (e["fim"] - e["ini"]).total_seconds() >= 1200)), None)
     if apoio:
         out.update(t="apoio", r=apoio["z"][6:], h=apoio["ini"].strftime("%H:%M"))
         return out
@@ -604,7 +610,7 @@ def apos_fechar(s, o, fin, setores, gar, ater, hoje):
     ult = eps[-1] if eps else None
     # indo ao aterro: depois do último trecho, o GPS vem se aproximando do aterro
     depois = [p for p in pts if not ult or p[0] > ult["fim"]]
-    if hoje and ater and len(depois) >= 3:
+    if hoje and ater and len(depois) >= 3 and not (ult and ult["z"] == "garagem"):
         d0, d1 = dist_m(depois[0][1], ater), dist_m(depois[-1][1], ater)
         if d1 < d0 - 800 and d1 < 15000:
             out.update(t="indo", h=depois[0][0].strftime("%H:%M"), km=round(d1 / 1000, 1))
@@ -615,6 +621,8 @@ def apos_fechar(s, o, fin, setores, gar, ater, hoje):
         out.update(t="aterro", h=ult["ini"].strftime("%H:%M"), agora=bool(hoje and zona(pts[-1][1], pts[-1][2]) == "aterro"))
     elif ult["z"] == "setor":
         out.update(t="setor" if teve_aterro else "coleta", h=ult["ini"].strftime("%H:%M"))
+    elif ult["z"].startswith("apoio:") and teve_aterro:   # só passou por outra rota (sem caracterizar apoio)
+        out.update(t="aterro", h=teve_aterro["ini"].strftime("%H:%M"), agora=False)
     elif ult["z"] == "garagem":
         out.update(t="garagem", h=ult["ini"].strftime("%H:%M"))
         if teve_aterro:
