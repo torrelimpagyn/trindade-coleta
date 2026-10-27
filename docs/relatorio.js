@@ -209,7 +209,7 @@
       li.push(`<b>Rota sem coleta:</b> ${km(semTot)} da rota programada ficaram sem passagem do caminhão${top.length ? `; mais em ${top.map(x => `${esc(x.s)} (${km(x.t)})`).join(', ')}` : ''}.`);
     }
     if (!li.length) li.push('Todos os setores programados saíram e foram concluídos.');
-    B.push({ html: `<h2>Destaques do dia</h2><ul class="dq">${li.map(x => `<li>${x}</li>`).join('')}</ul>` });
+    B.push({ lista: true, tit: '<h2>Destaques do dia</h2>', itens: li });
     // tabela de setores
     const cab = '<tr><th>Setor</th><th>Veículo</th><th class="n">INLOG</th><th class="n">GPS</th><th>Situação</th><th class="n">Saída – retorno</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>';
     const linhas = [];
@@ -259,6 +259,20 @@
     const cabe = () => ct.scrollHeight <= ALT + 1;
     nova();
     for (const b of B) {
+      if (b.lista) {   // lista de destaques: quebra entre itens
+        const tit = document.createElement('div'); tit.className = 'bl'; tit.innerHTML = b.tit; ct.appendChild(tit);
+        let ul = document.createElement('ul'); ul.className = 'dq'; ct.appendChild(ul);
+        let ni = 0;
+        for (const x of b.itens) {
+          ul.insertAdjacentHTML('beforeend', `<li>${x}</li>`); ni++;
+          if (cabe()) continue;
+          ul.lastElementChild.remove(); ni--;
+          if (ni === 0) { tit.remove(); ul.remove(); nova(); ct.appendChild(tit); ct.appendChild(ul); }
+          else { nova(); const c = document.createElement('div'); c.className = 'bl cont'; c.innerHTML = b.tit.replace(/<\/h2>/, ' <small>(continuação)</small></h2>'); ct.appendChild(c); ul = document.createElement('ul'); ul.className = 'dq'; ct.appendChild(ul); }
+          ul.insertAdjacentHTML('beforeend', `<li>${x}</li>`); ni = 1;
+        }
+        continue;
+      }
       if (!b.tab) {
         const d = document.createElement('div'); d.className = 'bl'; d.innerHTML = b.html; ct.appendChild(d);
         if (!cabe() && ct.children.length > 1) { d.remove(); nova(); ct.appendChild(d); }
