@@ -69,11 +69,14 @@ jobs:
         run: python coletor/consulta.py ${{ matrix.cidade }}
       - name: Salvar no repositório
         run: |
+          git config user.name coletor
+          git config user.email coletor@users.noreply.github.com
           git add docs/c/${{ matrix.cidade }}/consulta_dados.json
           if git diff --cached --quiet; then echo "nada mudou"; exit 0; fi
-          git -c user.name=coletor -c user.email=coletor@users.noreply.github.com commit -qm "Consulta: ${{ matrix.cidade }} ($(TZ=America/Sao_Paulo date +%d/%m))"
+          git commit -qm "Consulta: ${{ matrix.cidade }} ($(TZ=America/Sao_Paulo date +%d/%m))"
           for i in 1 2 3 4 5 6; do
             git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0
+            git rebase --abort 2>/dev/null || true
             sleep $((10 + RANDOM % 20))
           done
           exit 1
