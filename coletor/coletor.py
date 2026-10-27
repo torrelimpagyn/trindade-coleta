@@ -20,6 +20,7 @@ ROTA = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarRotaCompleta?c
 PLANO = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarRotasPlanejadas?codigoSetor={c}&data={d}"
 PASSAGENS = BASE + "/Rastreamento/Apresentacao/RastreamentoGeral/VeiculosGenerico/BuscarPassagens?latitude={la}&longitude={lo}&raio={r}&dataInicio={d}%2000:00:00&dataFim={d}%2023:59:59"
 DETALHE = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarDetalhesPlanejamentoSetor?codigoSetor={c}&dt={d}&deslocamento=false"
+HISTV = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarHistoricoVeiculoPorData?codigoVeiculo={v}&dataHoraInicio={a}&dataHoraFim={b}"
 DIAS = {0: ("SEG",), 1: ("TER",), 2: ("QUA",), 3: ("QUI",), 4: ("SEX",), 5: ("SAB", "SÁB"), 6: ("DOM",)}
 FILTRO = "TRINDADE"
 PARADA_MIN = 300   # segundos: paradas menores são as paradas normais de coleta
@@ -40,7 +41,7 @@ ACESSO_ATERRO = [  # via de acesso ao aterro (OpenStreetMap): Av. dos Angicos + 
 RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
 JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
-VERSAO_HIST = 7         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+VERSAO_HIST = 8         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
 
 
 ORCAMENTO = 200        # segundos por execução (o laço roda a cada 5 min); o histórico antigo só usa o que sobrar
@@ -542,6 +543,90 @@ def aterro(por_veic, ater):
     return out
 
 
+# ---------------------------------------------------------------- depois que a INLOG fecha o setor
+def episodios(pts, zona):
+    """Agrupa os pontos (hora, pos, vel) em trechos seguidos na mesma zona (aterro, garagem, setor, apoio:XXXX)."""
+    eps, atual = [], None
+    for t, pos, vel in pts:
+        z = zona(pos, vel)
+        if z is None:
+            if atual and (t - atual["fim"]).total_seconds() > 300:   # mais de 5 min fora: fecha o trecho
+                eps.append(atual); atual = None
+            continue
+        if atual and atual["z"] == z and (t - atual["fim"]).total_seconds() <= 600:
+            atual["fim"] = t
+        else:
+            if atual:
+                eps.append(atual)
+            atual = {"z": z, "ini": t, "fim": t}
+    if atual:
+        eps.append(atual)
+    MIN = {"aterro": 120, "garagem": 600, "setor": 300}
+    return [e for e in eps if (e["fim"] - e["ini"]).total_seconds() >= MIN.get(e["z"], 600) or e is eps[-1] and e["z"] in ("aterro", "garagem")]
+
+
+def apos_fechar(s, o, fin, setores, gar, ater, hoje):
+    """Classifica o que o veículo fez depois que a INLOG fechou o setor incompleto:
+    apoio (outra rota), aterro, indo ao aterro, voltou/continuou no setor ou garagem (encerrou de fato)."""
+    t_fin = dt.datetime.fromisoformat(fin[0])
+    fim = t_fin + dt.timedelta(hours=8)
+    if hoje:
+        fim = min(fim, dt.datetime.now(TZ).replace(tzinfo=None))
+    gmt = lambda t: t.replace(tzinfo=TZ).astimezone(dt.timezone.utc).strftime("%Y-%m-%d%%20%H:%M:%S")
+    pts = sorted((dt.datetime.fromisoformat(p["DataHora"][:19]), (p["Latitude"] / 1e6, p["Longitude"] / 1e6), p.get("Velocidade") or 0)
+                 for p in pegar_json(s, HISTV.format(v=fin[1], a=gmt(t_fin), b=gmt(fim))) or [] if p.get("Latitude") and p.get("DataHora"))
+    pts = [p for p in pts if p[0] >= t_fin]
+    out = {"t": None, "f": t_fin.strftime("%H:%M"), "v": fin[2]}
+    if not pts:
+        return out
+    out["u"] = pts[-1][0].strftime("%H:%M")
+
+    def zona(pos, vel):
+        if ater and dist_m(pos, ater) <= RAIO_ATERRO:
+            return "aterro"
+        if gar and dist_m(pos, gar) <= RAIO_GARAGEM:
+            return "garagem"
+        if vel > VEL_MAX:
+            return None
+        if o["ring"] and any(dentro(pos, r) for r in o["ring"]):
+            return "setor"
+        for x in setores:
+            if x is not o and x["s"] != o["s"] and x.get("ring") and any(dentro(pos, r) for r in x["ring"]):
+                return "apoio:" + x["s"]
+        return None
+
+    eps = episodios(pts, zona)
+    apoio = next((e for e in eps if e["z"].startswith("apoio:")), None)
+    if apoio:
+        out.update(t="apoio", r=apoio["z"][6:], h=apoio["ini"].strftime("%H:%M"))
+        return out
+    teve_aterro = next((e for e in eps if e["z"] == "aterro"), None)
+    ult = eps[-1] if eps else None
+    # indo ao aterro: depois do último trecho, o GPS vem se aproximando do aterro
+    depois = [p for p in pts if not ult or p[0] > ult["fim"]]
+    if hoje and ater and len(depois) >= 3:
+        d0, d1 = dist_m(depois[0][1], ater), dist_m(depois[-1][1], ater)
+        if d1 < d0 - 800 and d1 < 15000:
+            out.update(t="indo", h=depois[0][0].strftime("%H:%M"), km=round(d1 / 1000, 1))
+            return out
+    if not ult:
+        return out
+    if ult["z"] == "aterro":
+        out.update(t="aterro", h=ult["ini"].strftime("%H:%M"), agora=bool(hoje and zona(pts[-1][1], pts[-1][2]) == "aterro"))
+    elif ult["z"] == "setor":
+        out.update(t="setor" if teve_aterro else "coleta", h=ult["ini"].strftime("%H:%M"))
+    elif ult["z"] == "garagem":
+        out.update(t="garagem", h=ult["ini"].strftime("%H:%M"))
+        if teve_aterro:
+            out["a"] = teve_aterro["ini"].strftime("%H:%M")
+    return out
+
+
+def encerrou(o):
+    """Setor fechado pela INLOG com menos de 90% e o caminhão não foi para apoio, aterro nem voltou a coletar."""
+    return o["sit"] == "EXECUTADO" and o["pct"] < 90 and (o.get("pe") or {}).get("t") in (None, "garagem")
+
+
 # ---------------------------------------------------------------- principal
 def montar(s, dia, cad, at):
     """Monta o quadro de um dia (hoje ou um dia anterior)."""
@@ -602,6 +687,8 @@ def montar(s, dia, cad, at):
                     o["veic"].append(v)
                 col = c.get("SetoresColeta") or []
                 ent = col[0].get("DataHoraInicio") if col else None
+                if c.get("DataHoraFinalizacao") and c.get("CodigoVeiculo"):   # quando a INLOG fechou o controle
+                    o.setdefault("_fins", []).append((c["DataHoraFinalizacao"][:19], c["CodigoVeiculo"], v))
                 if ent and (o.get("_ent") is None or ent < o["_ent"]):
                     o["_ent"], o["entrada"] = ent, ent[11:16]
                 H = c.get("RastreamentoHistorico") or []
@@ -672,6 +759,17 @@ def montar(s, dia, cad, at):
         o.pop("_ent", None)
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%", "gps:", o.get("pgps"), "%")
+    ater = tuple(cad["aterro"]) if cad.get("aterro") else None
+    for o in setores:   # setor fechado com menos de 90%: o que o caminhão fez depois (GPS + geocercas)
+        fins = o.pop("_fins", None)
+        if o["sit"] == "EXECUTADO" and o["pct"] < 90 and fins:
+            try:
+                o["pe"] = apos_fechar(s, o, max(fins), setores, gar, ater, at != "final")
+                print("   ", o["s"], "fechado pela INLOG às", o["pe"]["f"], "com", o["pct"], "% →", o["pe"])
+            except SystemExit:
+                print("  histórico do veículo", o["s"], "indisponível")
+            except Exception as e:
+                print("  depois do fechamento", o["s"], "falhou:", e)
     ocupado = {(v, t.replace(second=0)) for v, d in por_veic.items() for t in d}
     hoje, fila = at != "final", []
     for o, dia_o in pend:
@@ -728,7 +826,7 @@ def guardar_dia(dados, sit, idx):
         return
     os.makedirs(HIST, exist_ok=True)
     criptografar(json.dumps(dados, separators=(",", ":")).encode(), os.path.join(HIST, dados["dia"] + ".enc.json"), True)
-    inc = sum(1 for x in dados["S"] if x["sit"] == "EXECUTADO" and x["pct"] < 90)
+    inc = sum(1 for x in dados["S"] if encerrou(x))
     idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(x.get("pgps") or 0 if x["sit"] == "GPS" else x["pct"] for x in S) / len(S)) if S else 0, "n": len(S), "i": inc, "v": VERSAO_HIST}
 
 
