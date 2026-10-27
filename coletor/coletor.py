@@ -216,7 +216,7 @@ def simplificar(pts, tol=6):
     return [pts[i] for i in sorted(manter)]
 
 
-def cobertura(lin, trv, raio=25, vel_max=25):
+def cobertura(lin, trv, raio=25, vel_max=25, amostra=None):
     """Percentual da rota programada (lin) por onde o GPS passou devagar (coletando), a até `raio` metros.
     trv = {veículo: [(hora, (lat, lon), velocidade)]}."""
     xy = lambda p: (p[1] * 111320 * C, p[0] * 110574)
@@ -253,8 +253,11 @@ def cobertura(lin, trv, raio=25, vel_max=25):
             for j in range(n):
                 q = (a[0] + (b[0] - a[0]) * (j + .5) / n, a[1] + (b[1] - a[1]) * (j + .5) / n)
                 tot += L / n
-                if perto(q):
+                feito = perto(q)
+                if feito:
                     ok += L / n
+                if amostra is not None:   # (lat, lon, metros, coletado?)
+                    amostra.append((q[1] / 110574, q[0] / (111320 * C), L / n, feito))
     return round(100 * ok / tot, 1) if tot else None
 
 
@@ -463,10 +466,53 @@ def historico_ruas(s, dia, gps_hoje):
 
 
 def seg(txt):
+    """Duração da INLOG (TimeSpan do .NET): "hh:mm:ss", "d.hh:mm:ss" (mais de 24 h) ou com fração "hh:mm:ss.fffffff"."""
     if not txt:
         return 0
-    h, m, s = (int(x) for x in txt.split(":"))
-    return h * 3600 + m * 60 + s
+    try:
+        h, m, s = str(txt).split(":")
+        d, h = h.split(".") if "." in h else (0, h)
+        return int(d) * 86400 + int(h) * 3600 + int(m) * 60 + int(float(s))
+    except ValueError:
+        return 0
+
+
+# ---------------------------------------------------------------- ruas que ficaram sem coleta
+_RUAS = {}
+
+
+def ruas_faltando(amostra, raio=25, minimo=40):
+    """Junta os trechos da rota programada sem coleta pelo GPS por nome de rua (ruas da consulta de endereços).
+    Devolve {"nf": [[rua, bairro, metros sem coleta], ...], "nfm": metros sem coleta}."""
+    if not amostra:
+        return {}
+    slug = CID.get("slug")
+    if slug not in _RUAS:
+        try:
+            ruas = json.load(open(arq_consulta()))["streets"]
+            _RUAS[slug] = (ruas,) + indice_ruas(ruas)[1:]
+        except Exception:
+            _RUAS[slug] = None
+    falta = sum(m for _, _, m, ok in amostra if not ok)
+    if not _RUAS[slug]:
+        return {"nfm": round(falta)}
+    ruas, cel = _RUAS[slug]
+    sem = {}
+    for la, lo, m, ok in amostra:
+        if ok:
+            continue
+        c0, melhor, idx = (round(la / CELULA), round(lo / CELULA)), raio, None
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for pla, plo, i in cel.get((c0[0] + di, c0[1] + dj), ()):
+                    d = dist_m((la, lo), (pla, plo))
+                    if d <= melhor:
+                        melhor, idx = d, i
+        sem[idx] = sem.get(idx, 0) + m
+    nf = [[ruas[i][0] if i is not None else "(trecho sem nome)", ruas[i][1] if i is not None else "", round(m)]
+          for i, m in sem.items() if m >= minimo]
+    nf.sort(key=lambda x: -x[2])
+    return {"nf": nf[:40], "nfm": round(falta)}
 
 
 # ---------------------------------------------------------------- garagem
@@ -757,7 +803,10 @@ def montar(s, dia, cad, at):
             try:
                 o["lin"], o["pctmapa"], o["rotas"] = rota_inlog(s, x["CodigoSetor"], dia_x, bool(x.get("Controle")), dia)
                 if trv and o["lin"]:
-                    o["pgps"] = cobertura(o["lin"], trv)   # percentual executado medido pelo GPS
+                    am = []
+                    o["pgps"] = cobertura(o["lin"], trv, amostra=am)   # percentual executado medido pelo GPS
+                    if at == "final" or o["sit"] not in ("ATIVO", "AGUARDANDO"):   # setor encerrado
+                        o.update(ruas_faltando(am))   # ruas da rota por onde o GPS não passou coletando
             except SystemExit:
                 raise
             except Exception as e:   # sem rota programada: o card continua funcionando
@@ -805,7 +854,7 @@ def montar(s, dia, cad, at):
         except Exception as e:
             print("  passagens", o["s"], "falharam:", e)
     limpar_respostas()
-    return {"dia": dia, "at": at, "cidade": CID["nome"], "garagem": cad.get("garagem"), "S": setores,
+    return {"dia": dia, "at": at, "cidade": CID["nome"], "garagem": cad.get("garagem"), "S": setores, "jornada": CID.get("jornada", 440),
             "aterro": aterro(por_veic, tuple(cad["aterro"])) if cad.get("aterro") else None}, gps_dia
 
 
@@ -830,7 +879,7 @@ def situacao(v):
 def guardar_dia(dados, sit, idx):
     S = [x for x in dados["S"] if x["sit"] != "AGUARDANDO" or x["pct"]]
     if not S and sit == "final":   # dia sem coleta registrada na INLOG
-        idx["dias"][dados["dia"]] = {"s": "vazio"}
+        idx["dias"][dados["dia"]] = {"s": "vazio", "v": VERSAO_HIST}
         return
     os.makedirs(HIST, exist_ok=True)
     criptografar(json.dumps(dados, separators=(",", ":")).encode(), os.path.join(HIST, dados["dia"] + ".enc.json"), True)
@@ -878,7 +927,7 @@ def proximo_dia_antigo(idx, dia, feitos):
     for k in range(1, CID.get("dias_busca", DIAS_BUSCA) + 1):
         d = (dt.date.fromisoformat(dia) - dt.timedelta(days=k)).isoformat()
         v = idx["dias"].get(d)
-        if isinstance(v, dict) and (v.get("s") == "vazio" or v.get("s") == "final" and v.get("v", 1) >= VERSAO_HIST):   # versões antigas são refeitas
+        if isinstance(v, dict) and v.get("s") in ("vazio", "final") and v.get("v", 1) >= VERSAO_HIST:   # versões antigas (e dias vazios antigos) são refeitas
             continue
         return d
     return None
@@ -926,7 +975,7 @@ def main():
                 ant = idx["dias"].get(d)
                 t = (ant.get("t", 0) if isinstance(ant, dict) else 0) + 1
                 print("dia", d, "falhou (%d):" % t, e)
-                idx["dias"][d] = {"s": "vazio"} if t >= 3 else {"s": "erro", "t": t}
+                idx["dias"][d] = {"s": "vazio", "v": VERSAO_HIST, "e": str(e)[:120]} if t >= 3 else {"s": "erro", "t": t}
             salvar_indice(idx, dia)
     print("tempo total: %.0f s" % (time.time() - _T0))
 
