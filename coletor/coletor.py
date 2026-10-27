@@ -512,7 +512,7 @@ def ruas_faltando(amostra, raio=25, minimo=40):
     nf = [[ruas[i][0] if i is not None else "(trecho sem nome)", ruas[i][1] if i is not None else "", round(m)]
           for i, m in sem.items() if m >= minimo]
     nf.sort(key=lambda x: -x[2])
-    return {"nf": nf[:40], "nfm": round(falta)}
+    return {"nf": nf, "nfm": round(falta)}   # todas as ruas (o relatório do fechamento lista todas)
 
 
 # ---------------------------------------------------------------- garagem
