@@ -759,6 +759,17 @@ def garagem_hist(s, setores, gar, dia, at):
             print("   ", o["s"], "garagem pelo GPS do caminhão: saída", o.get("saida"), "· retorno", o.get("volta"))
 
 
+def inicio_controle(c):
+    """Quando o controle da INLOG começou: o primeiro ponto do rastreio ou o início da coleta no setor."""
+    col = c.get("SetoresColeta") or []
+    ts = [h.get("DataHoraCompleta") for h in c.get("RastreamentoHistorico") or [] if h.get("DataHoraCompleta")]
+    ts += [t for t in ((col[0].get("DataHoraInicio") if col else None), c.get("DataHoraInicio")) if t]
+    try:
+        return min(dt.datetime.fromisoformat(t[:19]) for t in ts) if ts else None
+    except (ValueError, TypeError):
+        return None
+
+
 def pct_gps(o):
     """Percentual que vale no painel: o do rastreio (rota programada × GPS); sem rota programada, o da INLOG."""
     return o["pgps"] if o.get("pgps") is not None else o["pct"]
@@ -837,6 +848,8 @@ def montar(s, dia, cad, at):
     except SystemExit:
         pass
     setores, gps_dia, por_veic, pend = [], [], {}, []
+    jan_ini = dt.datetime.fromisoformat(dia) + dt.timedelta(hours=2)   # o dia operacional vai das 02h às 04h do dia seguinte
+    jan_fim = jan_ini + dt.timedelta(hours=26)
     aneis = aneis_cidade(s, linhas, dia)
     urls = []
     for x in linhas:   # baixa tudo de uma vez, em paralelo
@@ -858,8 +871,14 @@ def montar(s, dia, cad, at):
              "veic": list(veics.get(cod) or ([x["Veiculo"]] if x.get("Veiculo") else [])), "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])] if info else [r for r in aneis.get(str(x.get("CodigoSetor")), []) if len(r) > 2]}
         pontos, t0, t1, trilhas, km_pt, trv = [], None, None, {}, {}, {}
+        n_ok = n_velho = 0
         if x.get("Controle") and x.get("CodigoSetor"):
             for c in pegar_json(s, ROTA.format(c=x["CodigoSetor"], d=dia_x)) or []:
+                ic = inicio_controle(c)
+                if ic and not (jan_ini <= ic < jan_fim):
+                    n_velho += 1   # controle de outro dia (a INLOG às vezes devolve o de ontem): não entra nos dados de hoje
+                    continue
+                n_ok += 1
                 v = (c.get("Veiculo") or {}).get("Identificador")
                 if v and c.get("CodigoVeiculo"):
                     o.setdefault("_cv", {})[v] = c["CodigoVeiculo"]   # para buscar o GPS completo do caminhão
@@ -893,6 +912,10 @@ def montar(s, dia, cad, at):
                         continue
                     o["par"].append([(p.get("DataHoraInicio") or "")[11:16], (p.get("DataHoraFim") or "")[11:16], d, round(pt[0], 5), round(pt[1], 5)])
                     o["stop"] += d
+        so_velho = bool(n_velho and not n_ok)
+        if so_velho:   # só havia controle de outro dia: hoje o setor ainda não saiu
+            print("   ", cod, "só tem controle de outro dia na INLOG:", n_velho, "→ aguardando")
+            o.update(sit="AGUARDANDO", pct=0, ult=None, pos=None)
         # Ponto inicial da rota: 1º ponto de GPS dentro do setor a partir da entrada no setor (INLOG).
         te = dt.datetime.fromisoformat(o["_ent"][:19]) if o.get("_ent") else None
         cand = sorted(p for tr in trilhas.values() for p in tr if te is None or p[0] >= te)
@@ -938,15 +961,13 @@ def montar(s, dia, cad, at):
                 raise
             except Exception as e:   # sem rota programada: o card continua funcionando
                 print("  rota", cod, "indisponível:", e)
-            if not x.get("Controle") and not o["pct"] and o["lin"]:
-                pend.append((o, dia_x))   # a INLOG não registrou o setor: confere no GPS depois de ler todos os controles
-        if at != "final" and trilhas and dia_x == dia:   # setor emprestado de ontem não está rodando hoje
+            if (not x.get("Controle") or so_velho) and not o["pct"] and o["lin"]:
+                pend.append((o, dia if so_velho else dia_x))   # a INLOG não registrou o setor hoje: confere no GPS depois de ler todos os controles
+        if at != "final" and trilhas:
             try:
                 o.update(estado_gps(o, trilhas, gar, ater0))   # onde o rastreio deixou o caminhão (status no painel)
             except Exception as e:
                 print("  estado do GPS", cod, "falhou:", e)
-        elif at != "final" and dia_x != dia:
-            o["zf"] = "fora"   # setor emprestado de ontem: a operação dele já terminou
         o.pop("_ent", None)
         setores.append(o)
         print(cod, o["sit"], o["pct"], o["veic"], o["entrada"], o["dist"], "km", "rota:", o.get("rotas"), "mapa:", o.get("pctmapa"), "%", "gps:", o.get("pgps"), "%")
