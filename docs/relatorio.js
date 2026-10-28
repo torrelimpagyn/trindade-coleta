@@ -83,6 +83,8 @@
   const enc = s => stk(s) === 'in';
   const tlab = t => (typeof TLAB !== 'undefined' && TLAB[t]) || t || 'Outros';
   const ordem = (a, b) => String(a.s).localeCompare(String(b.s), 'pt-BR', { numeric: true });
+  let DA = null;   // viagens ao aterro do dia (GPS)
+  const nat = s => (DA || []).filter(x => (x.s || []).includes(s.s)).length;
   const slug = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
   // ------------------------------------------------------------ turnos
@@ -370,20 +372,23 @@
       const top = S.filter(saiu).map(s => ({ s: s.s, t: (RS[s.s] || {}).tot || 0 })).filter(x => x.t > 0).sort((a, b) => b.t - a.t).slice(0, 4);
       li.push(`<b>Rota sem coleta:</b> ${km(N.semTot)} da rota programada ficaram sem passagem do caminhão${N.semN ? ` (${km(N.semF)} nos setores que saíram e ${km(N.semN)} nos que não saíram)` : ''}${top.length ? `; mais em ${top.map(x => `${esc(x.s)} (${km(x.t)})`).join(', ')}` : ''}.`);
     }
+    const NA = S.reduce((a, s) => a + nat(s), 0), SA = S.filter(s => saiu(s) && nat(s));
+    if (NA) li.push(`<b>Viagens ao aterro:</b> ${NA} ${pl(NA, 'viagem', 'viagens')} (${SA.slice().sort((a, b) => nat(b) - nat(a)).map(s => `${esc(s.s)}: ${nat(s)}`).join(', ')}).`);
     if (!li.length) li.push(fechado ? 'Todos os setores programados saíram e foram concluídos.' : 'Turno em andamento: sem ocorrências até agora.');
     B.push({ lista: true, tit: '<h2>Destaques</h2>', itens: li });
     // setores
-    const cab = '<tr><th>Setor</th><th>Veículo</th><th class="n">Rastreio</th><th class="n">INLOG</th><th>Situação</th><th class="n">Saída – retorno</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>';
+    const cab = '<tr><th>Setor</th><th>Veículo</th><th class="n">Rastreio</th><th class="n">INLOG</th><th>Situação</th><th class="n">Saída – retorno</th><th class="n">Aterro</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>';
     const linhas = S.map(s => {
       const e = extra(s, T, jor), r = RS[s.s];
       return `<tr><td><i style="background:${cor(s)}"></i><b>${esc(s.s)}</b></td><td>${esc((s.veic || []).join(', ') || '—')}</td>
         <td class="n"><b>${saiu(s) ? n0(pg(s)) + '%' : '—'}</b></td><td class="n">${saiu(s) && s.sit !== 'GPS' ? n0(s.pct || 0) + '%' + (s.agd ? `<br><small>agenda ${s.agd.slice(8, 10)}/${s.agd.slice(5, 7)}</small>` : '') : '—'}</td><td>${esc(situ(s))}</td>
         <td class="n">${s.saida || s.volta ? (s.saida || '—') + ' – ' + (s.volta || '—') : '—'}</td>
+        <td class="n">${nat(s) || '—'}</td>
         <td class="n">${e ? (e.he ? '<b style="color:#a86f00">' + hmin(e.he) + '</b>' : '0') : '—'}</td>
         <td class="n">${r && r.tot ? km(r.tot) : '—'}</td></tr>`;
     });
     const heObs = T.ini != null ? `Hora extra: tempo fora da garagem antes das ${hora(T.ini)} ou depois das ${hora(T.fim)} (expediente do turno).` : `Hora extra: tempo entre a saída e o retorno à garagem além da jornada de ${hmin(jor)}.`;
-    B.push({ tab: true, tit: '<h2>Setores</h2>', cab, linhas, pos: `<div class="ob">Rastreio: parte da rota programada por onde o GPS do caminhão passou coletando (base do status). INLOG: percentual registrado no sistema, só como referência. Finalizada: saiu do setor com 95% ou mais; Incompleta: saiu com menos de 95%. ${heObs} Sem coleta: extensão da rota programada sem passagem do caminhão.</div>` });
+    B.push({ tab: true, tit: '<h2>Setores</h2>', cab, linhas, pos: `<div class="ob">Rastreio: parte da rota programada por onde o GPS do caminhão passou coletando (base do status). INLOG: percentual registrado no sistema, só como referência. Finalizada: saiu do setor com 95% ou mais; Incompleta: saiu com menos de 95%. ${heObs} Aterro: viagens ao aterro pelo GPS. Sem coleta: extensão da rota programada sem passagem do caminhão.</div>` });
     // ruas sem coleta: todas, por setor
     const L2 = [];
     S.forEach(s => {
@@ -559,6 +564,7 @@
 
   window.relatorio = async function (D, CX) {
     if (!D || !D.S) return;
+    DA = D.aterro || null;
     if (!document.getElementById('relCss')) { const st = document.createElement('style'); st.id = 'relCss'; st.textContent = CSS; document.head.appendChild(st); }
     let el = document.getElementById('rel'); if (el) el.remove();
     el = document.createElement('div'); el.id = 'rel';
