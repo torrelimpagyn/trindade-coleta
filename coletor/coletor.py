@@ -310,7 +310,7 @@ def diag_cobertura(lin, trv, vel_max=VEL_COLETA):
             for j in range(n + 1):
                 q = (A[0] + (B[0] - A[0]) * j / n, A[1] + (B[1] - A[1]) * j / n)
                 grade.setdefault((int(q[0] // 50), int(q[1] // 50)), set()).add(k)
-    tot, ok = 0, [0] * 6
+    tot, ok, faixa = 0, [0] * 6, [0, 0, 0, 0]   # sem coleta: GPS a 25-35 m, 35-50 m, 50-75 m, mais longe
     for _, pts in lin:
         P = [xy(q) for q in pts]
         for a, b in zip(P, P[1:]):
@@ -319,8 +319,8 @@ def diag_cobertura(lin, trv, vel_max=VEL_COLETA):
                 p = (a[0] + (b[0] - a[0]) * (j + .5) / n, a[1] + (b[1] - a[1]) * (j + .5) / n)
                 md = [1e9] * 5
                 cx, cy = int(p[0] // 50), int(p[1] // 50)
-                for di in (-1, 0, 1):
-                    for dj in (-1, 0, 1):
+                for di in (-2, -1, 0, 1, 2):
+                    for dj in (-2, -1, 0, 1, 2):
                         for k in grade.get((cx + di, cy + dj), ()):
                             (ax, ay), (bx, by), cl = segs[k]
                             dx, dy = bx - ax, by - ay
@@ -336,10 +336,13 @@ def diag_cobertura(lin, trv, vel_max=VEL_COLETA):
                         ok[i] += L / n
                 if md[3] <= 40:
                     ok[5] += L / n
+                if md[1] > 25:
+                    faixa[0 if md[4] <= 35 else 1 if md[4] <= 50 else 2 if md[4] <= 75 else 3] += L / n
     if not tot:
         return "sem rota"
     pc = [round(100 * x / tot, 1) for x in ok]
-    return "antes(25km/h)=%s agora(%dkm/h)=%s C=%s sem_limite=%s mapa=%s D40=%s · rota %.1f km" % (pc[0], vel_max, *pc[1:], tot / 1000)
+    return "antes(25km/h)=%s agora(%dkm/h)=%s C=%s sem_limite=%s mapa=%s D40=%s · rota %.1f km · sem coleta com GPS a 25-35 m: %d m, 35-50 m: %d m, 50-75 m: %d m, mais longe: %d m" % (
+        pc[0], vel_max, *pc[1:], tot / 1000, *faixa)
 
 
 def url_passagens(o, dia):
@@ -1049,15 +1052,15 @@ def montar(s, dia, cad, at):
                 if trv and o["lin"]:
                     am = []
                     o["pgps"] = cobertura(o["lin"], trv, amostra=am)   # percentual executado medido pelo GPS
+                    if at == "final" or o["sit"] not in ("ATIVO", "AGUARDANDO"):   # setor encerrado
+                        o.update(ruas_faltando(am))   # ruas da rota por onde o GPS não passou coletando
                     if at != "final" and (o["pgps"] or 0) < 95:
                         try:   # diagnóstico das regras do rastreio (só no log)
                             fim = max(t for tr in trv.values() for t, _, _ in tr)
                             print("    diag", cod, o["veic"], diag_cobertura(o["lin"], trv), "· último GPS do controle", fim.strftime("%H:%M"),
-                                  "· INLOG fechou", sorted(f[0][11:16] for f in o.get("_fins") or []))
+                                  "· INLOG fechou", sorted(f[0][11:16] for f in o.get("_fins") or []), "· ruas sem coleta", (o.get("nf") or [])[:8])
                         except Exception as e:
                             print("    diag", cod, "falhou:", e)
-                    if at == "final" or o["sit"] not in ("ATIVO", "AGUARDANDO"):   # setor encerrado
-                        o.update(ruas_faltando(am))   # ruas da rota por onde o GPS não passou coletando
             except SystemExit:
                 raise
             except Exception as e:   # sem rota programada: o card continua funcionando
