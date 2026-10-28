@@ -238,17 +238,22 @@ def simplificar_idx(pts, tol=6):
     return sorted(manter)
 
 
-def cobertura(lin, trv, raio=25, vel_max=25, amostra=None):
-    """Percentual da rota programada (lin) por onde o GPS passou devagar (coletando), a até `raio` metros.
+VEL_COLETA = 40   # km/h: trecho rodado acima disso (nas duas pontas e na média) é deslocamento, não coleta
+
+
+def cobertura(lin, trv, raio=25, vel_max=VEL_COLETA, amostra=None):
+    """Percentual da rota programada (lin) por onde o GPS do caminhão passou em velocidade de coleta, a até `raio` metros.
     trv = {veículo: [(hora, (lat, lon), velocidade)]}."""
     xy = lambda p: (p[1] * 111320 * C, p[0] * 110574)
     segs, grade = [], {}
     for pts in trv.values():
         u = sorted({t: (p, vel) for t, p, vel in pts}.items())
         for (t1, (a, va)), (t2, (b, vb)) in zip(u, u[1:]):
-            if (t2 - t1).total_seconds() > 180 or min(va, vb) > vel_max:
-                continue   # buraco no GPS ou trecho rodado rápido (só passando)
             A, B = xy(a), xy(b)
+            s_ = (t2 - t1).total_seconds()
+            vm = math.hypot(B[0] - A[0], B[1] - A[1]) / s_ * 3.6 if s_ else 0
+            if s_ > 180 or (min(va, vb) > vel_max and vm > vel_max):
+                continue   # buraco no GPS ou trecho rodado rápido (deslocamento, só passando)
             k = len(segs); segs.append((A, B))
             n = max(1, int(math.hypot(B[0] - A[0], B[1] - A[1]) // 25))
             for j in range(n + 1):
@@ -283,9 +288,9 @@ def cobertura(lin, trv, raio=25, vel_max=25, amostra=None):
     return round(100 * ok / tot, 1) if tot else None
 
 
-def diag_cobertura(lin, trv, vel_max=25):
+def diag_cobertura(lin, trv, vel_max=VEL_COLETA):
     """Diagnóstico (só no log): percentual da rota com cada regra do rastreio.
-    A = regra atual · B = + velocidade média do trecho · C = B + buraco de sinal curto (até 250 m)
+    A = regra antiga (25 km/h) · B = regra atual (VEL_COLETA, pontas ou média) · C = B + buraco de sinal curto (até 250 m)
     D = sem filtro de velocidade · mapa = como o mapa pinta (só distância) · D40 = D a até 40 m."""
     xy = lambda p: (p[1] * 111320 * C, p[0] * 110574)
     segs, grade = [], {}
@@ -298,7 +303,7 @@ def diag_cobertura(lin, trv, vel_max=25):
                 continue
             vm = d / s_ * 3.6 if s_ else 0
             lento = min(va, vb) <= vel_max
-            cl = (s_ <= 180 and lento, s_ <= 180 and (lento or vm <= vel_max),
+            cl = (s_ <= 180 and min(va, vb) <= 25, s_ <= 180 and (lento or vm <= vel_max),
                   (s_ <= 180 or d <= 250) and (lento or vm <= vel_max), s_ <= 180, True)
             k = len(segs); segs.append((A, B, cl))
             n = max(1, int(d // 25))
@@ -334,7 +339,7 @@ def diag_cobertura(lin, trv, vel_max=25):
     if not tot:
         return "sem rota"
     pc = [round(100 * x / tot, 1) for x in ok]
-    return "A=%s B=%s C=%s D=%s mapa=%s D40=%s · rota %.1f km · falta pela regra atual %.1f km" % (*pc, tot / 1000, (tot - ok[0]) / 1000)
+    return "antes(25km/h)=%s agora(%dkm/h)=%s C=%s sem_limite=%s mapa=%s D40=%s · rota %.1f km" % (pc[0], vel_max, *pc[1:], tot / 1000)
 
 
 def url_passagens(o, dia):
@@ -935,26 +940,34 @@ def montar(s, dia, cad, at):
             urls.append(PLANO.format(c=z["CodigoSetor"], d=dz))
             if z.get("Controle"):
                 urls += [ROTA.format(c=z["CodigoSetor"], d=dz), DETALHE.format(c=z["CodigoSetor"], d=dz)]
+        y2 = emprestado.get(codigo(x.get("Setor"))) if not y else None
+        if y2 and y2.get("Controle") and y2.get("CodigoSetor"):
+            urls.append(ROTA.format(c=y2["CodigoSetor"], d=ontem))
     buscar_varios(s, urls)
     for x in linhas:
         cod = codigo(x.get("Setor"))
-        dia_x = dia
+        dia_x, extra, pdia = dia, None, x.get("PorcentagemRound") or 0
         if (x.get("Situacao") or "").strip() == "AGUARDANDO" and not x.get("PorcentagemRound") and cod in emprestado:
             x = dict(emprestado[cod], Turno=x.get("Turno")); dia_x = ontem
+        elif cod in emprestado:
+            extra = emprestado[cod]   # hoje o setor tem registro e também uma coleta de hoje lançada na agenda de ontem: junta os dois
         info = cad["setores"].get(cod, {}) if cad.get("setores") else {}
         o = {"s": cod, "turno": x.get("Turno"), "sit": (x.get("Situacao") or "").strip(), "pct": x.get("PorcentagemRound") or 0,
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
              "veic": list(veics.get(cod) or ([x["Veiculo"]] if x.get("Veiculo") else [])), "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])] if info else [r for r in aneis.get(str(x.get("CodigoSetor")), []) if len(r) > 2]}
         pontos, t0, t1, trilhas, km_pt, trv = [], None, None, {}, {}, {}
-        n_ok = n_velho = 0
-        if x.get("Controle") and x.get("CodigoSetor"):
-            for c in pegar_json(s, ROTA.format(c=x["CodigoSetor"], d=dia_x)) or []:
+        n_ok = n_velho = n_ontem = 0
+        fontes = [(f, d) for f, d in ((x, dia_x), (extra, ontem)) if f and f.get("Controle") and f.get("CodigoSetor")]
+        for fx, fd in fontes:
+            for c in pegar_json(s, ROTA.format(c=fx["CodigoSetor"], d=fd)) or []:
                 ic = inicio_controle(c)
                 if ic and not (jan_ini <= ic < jan_fim):
                     n_velho += 1   # controle de outro dia (a INLOG às vezes devolve o de ontem): não entra nos dados de hoje
                     continue
                 n_ok += 1
+                if fd != dia:
+                    n_ontem += 1
                 v = (c.get("Veiculo") or {}).get("Identificador")
                 if v and c.get("CodigoVeiculo"):
                     o.setdefault("_cv", {})[v] = c["CodigoVeiculo"]   # para buscar o GPS completo do caminhão
@@ -989,9 +1002,11 @@ def montar(s, dia, cad, at):
                     o["par"].append([(p.get("DataHoraInicio") or "")[11:16], (p.get("DataHoraFim") or "")[11:16], d, round(pt[0], 5), round(pt[1], 5)])
                     o["stop"] += d
         so_velho = bool(n_velho and not n_ok)
-        if dia_x != dia and n_ok:   # coleta de hoje que a INLOG lançou na agenda de ontem (na tela de hoje da INLOG o setor fica 0%)
-            o["agd"] = dia_x
-            print("   ", cod, "coleta de hoje lançada na agenda de", dia_x, "na INLOG")
+        if n_ontem:   # coleta de hoje que a INLOG lançou na agenda de ontem (a tela de hoje da INLOG não mostra essa coleta)
+            o["agd"], o["pdia"] = ontem, pdia
+            if extra:
+                o["pct"] = max(o["pct"], extra.get("PorcentagemRound") or 0)
+            print("   ", cod, "coleta de hoje lançada na agenda de", ontem, "na INLOG", "(junto com o registro de hoje)" if extra else "")
         if so_velho:   # só havia controle de outro dia: hoje o setor ainda não saiu
             print("   ", cod, "só tem controle de outro dia na INLOG:", n_velho, "→ aguardando")
             o.update(sit="AGUARDANDO", pct=0, ult=None, pos=None)
