@@ -676,6 +676,89 @@ def apos_fechar(s, o, fin, setores, gar, ater, hoje):
     return out
 
 
+def periodos_garagem(pts, gar):
+    """Períodos (entrou, saiu) em que o GPS do caminhão ficou dentro do raio da garagem; saiu = None se ainda está lá."""
+    per, ini = [], None
+    for t, pos in pts:
+        if dist_m(pos, gar) <= RAIO_GARAGEM:
+            if ini is None:
+                ini = t
+        elif ini is not None:
+            per.append((ini, t))
+            ini = None
+    if ini is not None:
+        per.append((ini, None))
+    return [(x, y) for x, y in per if y is None or (y - x).total_seconds() >= 300]   # só passou perto (menos de 5 min) não conta
+
+
+def garagem_hist(s, setores, gar, dia, at):
+    """Completa a saída e o retorno à garagem com o histórico completo do GPS do caminhão. O rastreio que a INLOG
+    manda junto com o controle só cobre o tempo do controle: pode começar depois da saída ou acabar antes da volta."""
+    if not gar:
+        return
+    hoje = at != "final"
+    agora = dt.datetime.now(TZ).replace(tzinfo=None)
+    pede_v = lambda o: not o.get("volta") and (not hoje or o["sit"] != "ATIVO")
+    falta = [o for o in setores if o.get("_cv") and o.get("_tr") and (not o.get("saida") or pede_v(o))]
+    ini_v = {}   # primeiro ponto do caminhão nos setores do dia (a saída da garagem vem antes disso)
+    for o in setores:
+        for v, cv in (o.get("_cv") or {}).items():
+            if v in (o.get("_tr") or {}):
+                ini_v[cv] = min(ini_v.get(cv, o["_tr"][v][0]), o["_tr"][v][0])
+    jan = {}   # código do veículo -> [início, fim] da busca
+    for o in falta:
+        for v, cv in o["_cv"].items():
+            if v not in o["_tr"]:
+                continue
+            t0, t1 = o["_tr"][v]
+            a = ini_v[cv] - dt.timedelta(hours=5) if not o.get("saida") else t1 - dt.timedelta(minutes=15)
+            b = t1 + dt.timedelta(hours=6) if pede_v(o) else t0 + dt.timedelta(minutes=15)
+            if hoje:
+                b = min(b, agora)
+            j = jan.setdefault(cv, [a, b])
+            j[0], j[1] = min(j[0], a), max(j[1], b)
+    gmt = lambda t: t.replace(tzinfo=TZ).astimezone(dt.timezone.utc).strftime("%Y-%m-%d%%20%H:%M:%S")
+    per, buscar = {}, []
+    for cv, (a, b) in jan.items():
+        k = "%s|%s|gar|%s" % (CID["slug"], dia, cv)
+        g = GPSX.get(k)
+        if hoje and g and time.time() - g["t"] < 900 and g["a"] <= a.isoformat() and g["b"] >= b.isoformat()[:13]:
+            per[cv] = [(dt.datetime.fromisoformat(x), dt.datetime.fromisoformat(y) if y else None) for x, y in g["per"]]
+        elif b > a:
+            buscar.append((cv, k, a, b, HISTV.format(v=cv, a=gmt(a), b=gmt(b))))
+    buscar_varios(s, [x[4] for x in buscar], n=6)
+    for cv, k, a, b, u in buscar:
+        try:
+            pts = sorted((dt.datetime.fromisoformat(p["DataHora"][:19]), (p["Latitude"] / 1e6, p["Longitude"] / 1e6))
+                         for p in pegar_json(s, u) or [] if p.get("Latitude") and p.get("DataHora"))
+        except (SystemExit, Exception) as e:
+            print("  histórico do veículo", cv, "indisponível:", e)
+            continue
+        per[cv] = periodos_garagem(pts, gar)
+        if hoje:
+            GPSX[k] = {"t": time.time(), "a": a.isoformat(), "b": b.isoformat()[:13],
+                       "per": [[x.isoformat(), y.isoformat() if y else None] for x, y in per[cv]]}
+    for o in falta:
+        sai, vol = [], []
+        for v, cv in o["_cv"].items():
+            if cv not in per or v not in o["_tr"]:
+                continue
+            t0, t1 = o["_tr"][v]
+            ds = [y for x, y in per[cv] if y and y <= t0 + dt.timedelta(minutes=10)]   # última saída antes de começar
+            if ds:
+                sai.append(max(ds))
+            vs = [x for x, y in per[cv] if x >= t1 - dt.timedelta(minutes=10) and (y is None or (y - x).total_seconds() >= 600)]
+            if vs:
+                vol.append(min(vs))   # primeira chegada (de pelo menos 10 min) depois do fim do rastreio no setor
+        if not o.get("saida") and sai:
+            o["saida"] = min(sai).strftime("%H:%M")
+            o.pop("rast0", None)
+        if pede_v(o) and vol:
+            o["volta"] = max(vol).strftime("%H:%M")
+        if sai or vol:
+            print("   ", o["s"], "garagem pelo GPS do caminhão: saída", o.get("saida"), "· retorno", o.get("volta"))
+
+
 def pct_gps(o):
     """Percentual que vale no painel: o do rastreio (rota programada × GPS); sem rota programada, o da INLOG."""
     return o["pgps"] if o.get("pgps") is not None else o["pct"]
@@ -778,6 +861,8 @@ def montar(s, dia, cad, at):
         if x.get("Controle") and x.get("CodigoSetor"):
             for c in pegar_json(s, ROTA.format(c=x["CodigoSetor"], d=dia_x)) or []:
                 v = (c.get("Veiculo") or {}).get("Identificador")
+                if v and c.get("CodigoVeiculo"):
+                    o.setdefault("_cv", {})[v] = c["CodigoVeiculo"]   # para buscar o GPS completo do caminhão
                 if v and v not in o["veic"]:
                     o["veic"].append(v)
                 col = c.get("SetoresColeta") or []
@@ -822,6 +907,7 @@ def montar(s, dia, cad, at):
             u = sorted(dict(tr).items())
             if len(u) > 1:
                 o["gps"].append([v, u[0][0].strftime("%H:%M"), u[-1][0].strftime("%H:%M"), enc(simplificar([q for _, q in u]))])
+        o["_tr"] = {v: (min(t for t, _ in tr), max(t for t, _ in tr)) for v, tr in trilhas.items() if tr}
         sai = []
         for v, tr in (trilhas.items() if gar else []):
             a, b, c0 = garagem(tr, gar)
@@ -875,6 +961,12 @@ def montar(s, dia, cad, at):
                 print("  histórico do veículo", o["s"], "indisponível")
             except Exception as e:
                 print("  depois do fechamento", o["s"], "falhou:", e)
+    try:
+        garagem_hist(s, setores, gar, dia, at)   # saída e retorno à garagem pelo GPS completo do caminhão
+    except (SystemExit, Exception) as e:
+        print("  garagem pelo histórico do veículo falhou:", e)
+    for o in setores:
+        o.pop("_cv", None); o.pop("_tr", None)
     ocupado = {(v, t.replace(second=0)) for v, d in por_veic.items() for t in d}
     hoje, fila = at != "final", []
     for o, dia_o in pend:
