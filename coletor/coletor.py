@@ -346,44 +346,6 @@ def diag_cobertura(lin, trv, vel_max=VEL_COLETA):
         pc[0], vel_max, RAIO_GPS, *pc[1:], tot / 1000, RAIO_GPS, *faixa)
 
 
-_CAMPOS = set()
-SENS = re.compile(r"sensor|entrada|saida|compact|tomada|pto|evento|porta|bascul|acion|input|digital", re.I)
-
-
-def diag_campos(nome, obj, lista=None):
-    """Diagnóstico (só no log, uma vez por execução): nomes dos campos que a INLOG manda e valores dos que parecem sensor."""
-    if CID.get("slug") != "trindade" or nome in _CAMPOS or not isinstance(obj, dict):
-        return
-    _CAMPOS.add(nome)
-    print("    campos", nome, sorted(obj.keys()))
-    for k in sorted(obj):
-        v0 = obj[k]
-        if isinstance(v0, dict):
-            print("    campo", nome, k, "objeto:", sorted(v0.keys()))
-            for nk in sorted(v0):
-                if SENS.search(nk):
-                    vals = {}
-                    for h in lista or [obj]:
-                        v = (h.get(k) or {}).get(nk) if isinstance(h, dict) else None
-                        v = v if isinstance(v, (bool, int, float)) or v is None else str(v)[:30]
-                        vals[v] = vals.get(v, 0) + 1
-                    print("    campo", nome, k + "." + nk, sorted(vals.items(), key=lambda x: (-x[1], str(x[0])))[:8])
-            if nome == "ponto" and k == "InfoWindow":   # pontos com sensor: porta, compactador, parada e velocidade
-                ex = [(h.get("DataHoraCompleta", "")[11:19], h.get("AbriuPorta"), (h.get("InfoWindow") or {}).get("AcionamentoCompactador"),
-                       h.get("TempoParado"), h.get("Velocidade")) for h in lista or []
-                      if h.get("AbriuPorta") == "T" or (h.get("InfoWindow") or {}).get("AcionamentoCompactador") not in (None, 0, "", "0", False, "F")]
-                print("    campo pontos com sensor", len(ex), ex[:10])
-        elif isinstance(v0, list) and v0 and isinstance(v0[0], dict):
-            print("    campo", nome, k, "lista de", len(v0), ":", sorted(v0[0].keys()))
-        if SENS.search(k):
-            vals = {}
-            for h in lista or [obj]:
-                v = h.get(k) if isinstance(h, dict) else None
-                v = v if isinstance(v, (bool, int, float)) or v is None else str(v)[:30]
-                vals[v] = vals.get(v, 0) + 1
-            print("    campo", nome, k, sorted(vals.items(), key=lambda x: -x[1])[:6])
-
-
 def previsao(lin, trv, pct, janela=45):
     """Corrida contra o relógio: ritmo de cobertura da rota pelo GPS (% por hora, últimos 45 min) e hora prevista para chegar a 95%."""
     pts = [p for tr in trv.values() for p in tr]
@@ -894,9 +856,6 @@ def garagem_hist(s, setores, gar, dia, at):
         try:
             pts = sorted((dt.datetime.fromisoformat(p["DataHora"][:19]), (p["Latitude"] / 1e6, p["Longitude"] / 1e6))
                          for p in pegar_json(s, u) or [] if p.get("Latitude") and p.get("DataHora"))
-            if CID.get("slug") == "trindade" and "historico" not in _CAMPOS:
-                r_ = pegar_json(s, u) or []
-                diag_campos("historico", r_[0] if r_ else None, r_)
         except (SystemExit, Exception) as e:
             print("  histórico do veículo", cv, "indisponível:", e)
             continue
@@ -1043,6 +1002,7 @@ def montar(s, dia, cad, at):
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])] if info else [r for r in aneis.get(str(x.get("CodigoSetor")), []) if len(r) > 2]}
         pontos, t0, t1, trilhas, km_pt, trv = [], None, None, {}, {}, {}
         n_ok = n_velho = n_ontem = 0
+        cpt = []   # acionamentos do compactador (sensor)
         fontes = [(f, d) for f, d in ((x, dia_x), (extra, ontem)) if f and f.get("Controle") and f.get("CodigoSetor")]
         for fx, fd in fontes:
             for c in pegar_json(s, ROTA.format(c=fx["CodigoSetor"], d=fd)) or []:
@@ -1065,8 +1025,9 @@ def montar(s, dia, cad, at):
                 if ent and (o.get("_ent") is None or ent < o["_ent"]):
                     o["_ent"], o["entrada"] = ent, ent[11:16]
                 H = c.get("RastreamentoHistorico") or []
-                diag_campos("controle", c); diag_campos("ponto", H[0] if H else None, H)
-                diag_campos("parada", (c.get("PontosParada") or [None])[0], c.get("PontosParada"))
+                for h in H:   # sensor do compactador (INLOG: AcionamentoCompactador / AbriuPorta)
+                    if (h.get("InfoWindow") or {}).get("AcionamentoCompactador") is True or h.get("AbriuPorta") == "T":
+                        cpt.append((dt.datetime.fromisoformat(h["DataHoraCompleta"][:19]), (h["Posicao"]["Latitude"], h["Posicao"]["Longitude"]), seg(h.get("TempoParado")), v or "?"))
                 tr = trilhas.setdefault(v or "?", [])
                 for h in H:
                     t = dt.datetime.fromisoformat(h["DataHoraCompleta"][:19])
@@ -1089,6 +1050,16 @@ def montar(s, dia, cad, at):
                     o["par"].append([(p.get("DataHoraInicio") or "")[11:16], (p.get("DataHoraFim") or "")[11:16], d, round(pt[0], 5), round(pt[1], 5)])
                     o["stop"] += d
         so_velho = bool(n_velho and not n_ok)
+        if cpt:   # junta acionamentos seguidos (até 3 min e 40 m) num ciclo de compactação
+            cpt.sort(key=lambda x: (x[3], x[0]))
+            ciclos = []
+            for t_, p_, d_, v_ in cpt:
+                c_ = ciclos[-1] if ciclos else None
+                if c_ and c_[4] == v_ and (t_ - c_[5]).total_seconds() <= 180 and dist_m(p_, c_[6]) <= 40:
+                    c_[3] += d_; c_[5] = t_
+                else:
+                    ciclos.append([p_[0], p_[1], t_.strftime("%H:%M"), d_, v_, t_, p_])
+            o["cpt"] = [[round(c_[0], 5), round(c_[1], 5), c_[2], c_[3], c_[4]] for c_ in sorted(ciclos, key=lambda c_: c_[5])]
         if n_ontem:   # coleta de hoje que a INLOG lançou na agenda de ontem (a tela de hoje da INLOG não mostra essa coleta)
             o["agd"], o["pdia"] = ontem, pdia
             if extra:
@@ -1150,6 +1121,8 @@ def montar(s, dia, cad, at):
                     if at != "final" and o["pgps"] is not None and o["pgps"] < 95:
                         try:
                             o.update(previsao(o["lin"], trv, o["pgps"]))   # corrida contra o relógio
+                            if o.get("ritmo") is not None:
+                                print("   ", cod, "previsão de 95%:", o.get("eta"), "· ritmo", o["ritmo"], "%/h · compactações", len(o.get("cpt") or []))
                         except Exception as e:
                             print("  previsão", cod, "falhou:", e)
                     if at == "final" or o["sit"] not in ("ATIVO", "AGUARDANDO"):   # setor encerrado
