@@ -360,6 +360,19 @@ def diag_campos(nome, obj, lista=None):
         v0 = obj[k]
         if isinstance(v0, dict):
             print("    campo", nome, k, "objeto:", sorted(v0.keys()))
+            for nk in sorted(v0):
+                if SENS.search(nk):
+                    vals = {}
+                    for h in lista or [obj]:
+                        v = (h.get(k) or {}).get(nk) if isinstance(h, dict) else None
+                        v = v if isinstance(v, (bool, int, float)) or v is None else str(v)[:30]
+                        vals[v] = vals.get(v, 0) + 1
+                    print("    campo", nome, k + "." + nk, sorted(vals.items(), key=lambda x: (-x[1], str(x[0])))[:8])
+            if nome == "ponto" and k == "InfoWindow":   # pontos com sensor: porta, compactador, parada e velocidade
+                ex = [(h.get("DataHoraCompleta", "")[11:19], h.get("AbriuPorta"), (h.get("InfoWindow") or {}).get("AcionamentoCompactador"),
+                       h.get("TempoParado"), h.get("Velocidade")) for h in lista or []
+                      if h.get("AbriuPorta") == "T" or (h.get("InfoWindow") or {}).get("AcionamentoCompactador") not in (None, 0, "", "0", False, "F")]
+                print("    campo pontos com sensor", len(ex), ex[:10])
         elif isinstance(v0, list) and v0 and isinstance(v0[0], dict):
             print("    campo", nome, k, "lista de", len(v0), ":", sorted(v0[0].keys()))
         if SENS.search(k):
