@@ -283,6 +283,60 @@ def cobertura(lin, trv, raio=25, vel_max=25, amostra=None):
     return round(100 * ok / tot, 1) if tot else None
 
 
+def diag_cobertura(lin, trv, vel_max=25):
+    """Diagnóstico (só no log): percentual da rota com cada regra do rastreio.
+    A = regra atual · B = + velocidade média do trecho · C = B + buraco de sinal curto (até 250 m)
+    D = sem filtro de velocidade · mapa = como o mapa pinta (só distância) · D40 = D a até 40 m."""
+    xy = lambda p: (p[1] * 111320 * C, p[0] * 110574)
+    segs, grade = [], {}
+    for pts in trv.values():
+        u = sorted({t: (p, vel) for t, p, vel in pts}.items())
+        for (t1, (a, va)), (t2, (b, vb)) in zip(u, u[1:]):
+            A, B = xy(a), xy(b)
+            d, s_ = math.hypot(B[0] - A[0], B[1] - A[1]), (t2 - t1).total_seconds()
+            if d > 1500:
+                continue
+            vm = d / s_ * 3.6 if s_ else 0
+            lento = min(va, vb) <= vel_max
+            cl = (s_ <= 180 and lento, s_ <= 180 and (lento or vm <= vel_max),
+                  (s_ <= 180 or d <= 250) and (lento or vm <= vel_max), s_ <= 180, True)
+            k = len(segs); segs.append((A, B, cl))
+            n = max(1, int(d // 25))
+            for j in range(n + 1):
+                q = (A[0] + (B[0] - A[0]) * j / n, A[1] + (B[1] - A[1]) * j / n)
+                grade.setdefault((int(q[0] // 50), int(q[1] // 50)), set()).add(k)
+    tot, ok = 0, [0] * 6
+    for _, pts in lin:
+        P = [xy(q) for q in pts]
+        for a, b in zip(P, P[1:]):
+            L = math.hypot(b[0] - a[0], b[1] - a[1]); n = max(1, int(math.ceil(L / 10)))
+            for j in range(n):
+                p = (a[0] + (b[0] - a[0]) * (j + .5) / n, a[1] + (b[1] - a[1]) * (j + .5) / n)
+                md = [1e9] * 5
+                cx, cy = int(p[0] // 50), int(p[1] // 50)
+                for di in (-1, 0, 1):
+                    for dj in (-1, 0, 1):
+                        for k in grade.get((cx + di, cy + dj), ()):
+                            (ax, ay), (bx, by), cl = segs[k]
+                            dx, dy = bx - ax, by - ay
+                            L2 = dx * dx + dy * dy
+                            t = max(0, min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy) / L2)) if L2 else 0
+                            dd = math.hypot(p[0] - ax - t * dx, p[1] - ay - t * dy)
+                            for i in range(5):
+                                if cl[i] and dd < md[i]:
+                                    md[i] = dd
+                tot += L / n
+                for i in range(5):
+                    if md[i] <= 25:
+                        ok[i] += L / n
+                if md[3] <= 40:
+                    ok[5] += L / n
+    if not tot:
+        return "sem rota"
+    pc = [round(100 * x / tot, 1) for x in ok]
+    return "A=%s B=%s C=%s D=%s mapa=%s D40=%s · rota %.1f km · falta pela regra atual %.1f km" % (*pc, tot / 1000, (tot - ok[0]) / 1000)
+
+
 def url_passagens(o, dia):
     pts_area = [tuple(q) for _, l in o["lin"] for q in l]
     if not pts_area:
@@ -980,6 +1034,13 @@ def montar(s, dia, cad, at):
                 if trv and o["lin"]:
                     am = []
                     o["pgps"] = cobertura(o["lin"], trv, amostra=am)   # percentual executado medido pelo GPS
+                    if at != "final" and (o["pgps"] or 0) < 95:
+                        try:   # diagnóstico das regras do rastreio (só no log)
+                            fim = max(t for tr in trv.values() for t, _, _ in tr)
+                            print("    diag", cod, o["veic"], diag_cobertura(o["lin"], trv), "· último GPS do controle", fim.strftime("%H:%M"),
+                                  "· INLOG fechou", sorted(f[0][11:16] for f in o.get("_fins") or []))
+                        except Exception as e:
+                            print("    diag", cod, "falhou:", e)
                     if at == "final" or o["sit"] not in ("ATIVO", "AGUARDANDO"):   # setor encerrado
                         o.update(ruas_faltando(am))   # ruas da rota por onde o GPS não passou coletando
             except SystemExit:
