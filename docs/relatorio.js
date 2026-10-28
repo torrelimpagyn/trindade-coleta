@@ -236,6 +236,89 @@
   }
   const LEG = `<div class="lg"><span><i style="background:#4fb37f"></i>95% ou mais (meta)</span><span><i style="background:#e9b44c"></i>80 a 94%</span><span><i style="background:#e06b62"></i>abaixo de 80%</span><span><i style="background:#c9d0cc"></i>não saiu</span><span><i style="background:#fff;box-shadow:inset 0 0 0 1px #b4beb8"></i>outro turno</span></div>`;
 
+  // ------------------------------------------------------------ mapa do que falta realizar (rotas incompletas)
+  let RU = null;   // ruas da consulta de endereços (nomes no mapa)
+  const MW = 628, MH = 330, TILE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/';
+  const merc = (la, lo, z) => { const n = 256 * Math.pow(2, z), s = Math.sin(la * Math.PI / 180); return [(lo + 180) / 360 * n, (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n]; };
+  function trechosFalta(s) {   // trechos da rota programada a mais de 35 m do rastreio (o mesmo vermelho do mapa do painel)
+    const lin = s.lin || []; if (!lin.length) return [];
+    const C = Math.cos(((lin[0][1][0] || [-16])[0]) * Math.PI / 180), xy = p => [p[1] * 111320 * C, p[0] * 110574], T = 35, G = new Map();
+    (s.gps || []).forEach(g => {
+      const P = dec(g[3]).map(xy);
+      for (let j = 0; j + 1 < P.length; j++) {
+        const a = P[j], b = P[j + 1], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (d > 1500) continue;
+        const n = Math.max(1, Math.ceil(d / 10));
+        for (let k = 0; k <= n; k++) { const q = [a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n], key = Math.floor(q[0] / T) + '_' + Math.floor(q[1] / T); (G.get(key) || G.set(key, []).get(key)).push(q); }
+      }
+    });
+    const perto = q => { const cx = Math.floor(q[0] / T), cy = Math.floor(q[1] / T); for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const L = G.get((cx + i) + '_' + (cy + j)); if (L) for (const p of L) if (Math.hypot(p[0] - q[0], p[1] - q[1]) <= T) return true; } return false; };
+    const out = [];
+    lin.forEach(l => {
+      const P = l[1]; let cur = null;
+      for (let j = 0; j + 1 < P.length; j++) {
+        const A = xy(P[j]), B = xy(P[j + 1]), d = Math.hypot(B[0] - A[0], B[1] - A[1]), n = Math.max(1, Math.ceil(d / 10));
+        for (let k = 0; k < n; k++) {
+          const fm = (k + .5) / n, q = [A[0] + (B[0] - A[0]) * fm, A[1] + (B[1] - A[1]) * fm], pt = f => [P[j][0] + (P[j + 1][0] - P[j][0]) * f, P[j][1] + (P[j + 1][1] - P[j][1]) * f];
+          if (perto(q)) { cur = null; continue; }
+          if (!cur) { cur = [pt(k / n)]; out.push(cur); }
+          cur.push(pt((k + 1) / n));
+        }
+      }
+    });
+    return out;
+  }
+  function nomesFalta(FT) {   // ruas dos trechos que faltam: metros e um ponto da rua para o rótulo
+    if (!RU) return [];
+    const M = new Map();
+    FT.forEach(L => {
+      for (let j = 0; j + 1 < L.length; j++) {
+        const a = L[j], b = L[j + 1], d = Math.hypot((b[0] - a[0]) * 110574, (b[1] - a[1]) * 111320 * RU.C), n = Math.max(1, Math.ceil(d / 15));
+        for (let k = 0; k < n; k++) {
+          const la = a[0] + (b[0] - a[0]) * (k + .5) / n, lo = a[1] + (b[1] - a[1]) * (k + .5) / n, c0 = Math.round(la / RU.K), c1 = Math.round(lo / RU.K);
+          let best = 25, idx = -1;
+          for (let i = -1; i <= 1; i++) for (let jj = -1; jj <= 1; jj++) { const C = RU.cel.get((c0 + i) + '_' + (c1 + jj)); if (C) for (const p of C) { const dd = Math.hypot((p[0] - la) * 110574, (p[1] - lo) * 111320 * RU.C); if (dd <= best) { best = dd; idx = p[2]; } } }
+          if (idx < 0) continue;
+          const x = M.get(idx) || M.set(idx, { r: RU.ruas[idx][0], m: 0, P: [] }).get(idx);
+          x.m += d / n; x.P.push([la, lo]);
+        }
+      }
+    });
+    return [...M.values()].filter(x => x.m >= 40).sort((a, b) => b.m - a.m).map(x => {
+      const c = [x.P.reduce((a, p) => a + p[0], 0) / x.P.length, x.P.reduce((a, p) => a + p[1], 0) / x.P.length];
+      return { r: x.r, m: x.m, p: x.P.reduce((a, p) => Math.hypot(p[0] - c[0], p[1] - c[1]) < Math.hypot(a[0] - c[0], a[1] - c[1]) ? p : a, x.P[0]) };
+    });
+  }
+  function mapaFalta(s) {   // mapa de rua: rastreio do caminhão (azul) e o que falta realizar (vermelho)
+    const FT = trechosFalta(s).filter(L => L.length > 1);
+    if (!FT.length) return '';
+    const fp = FT.flat(), la = fp.map(p => p[0]), lo = fp.map(p => p[1]);
+    let la0 = Math.min(...la), la1 = Math.max(...la), lo0 = Math.min(...lo), lo1 = Math.max(...lo);
+    const mla = Math.max(0, .004 - (la1 - la0)) / 2, mlo = Math.max(0, .004 - (lo1 - lo0)) / 2;   // pelo menos ~450 m de área
+    la0 -= mla; la1 += mla; lo0 -= mlo; lo1 += mlo;
+    let z = 17;
+    for (; z > 10; z--) { const a = merc(la1, lo0, z), b = merc(la0, lo1, z); if (b[0] - a[0] <= MW - 40 && b[1] - a[1] <= MH - 40) break; }
+    const a = merc(la1, lo0, z), b = merc(la0, lo1, z), x0 = (a[0] + b[0]) / 2 - MW / 2, y0 = (a[1] + b[1]) / 2 - MH / 2;
+    const P = p => { const m = merc(p[0], p[1], z); return [m[0] - x0, m[1] - y0]; };
+    const d = L => 'M' + L.map(p => P(p).map(v => v.toFixed(1)).join(',')).join('L');
+    let img = '';
+    for (let tx = Math.floor(x0 / 256); tx <= Math.floor((x0 + MW) / 256); tx++) for (let ty = Math.floor(y0 / 256); ty <= Math.floor((y0 + MH) / 256); ty++)
+      img += `<img src="${TILE}${z}/${ty}/${tx}" crossorigin="anonymous" alt="" onerror="this.style.visibility='hidden'" style="position:absolute;left:${Math.round(tx * 256 - x0)}px;top:${Math.round(ty * 256 - y0)}px;width:256px;height:256px;max-width:none">`;
+    const ring = (s.ring || []).map(r => `<path d="${d(r.concat([r[0]]))}" fill="none" stroke="#3b3b3b" stroke-width="1.6" stroke-dasharray="6 4" opacity=".75"/>`).join('');
+    const trk = (s.gps || []).map(g => dec(g[3])).filter(L => L.length > 1).map(L => d(L)).join('');
+    const ft = FT.map(L => d(L)).join('');
+    let rot = '';
+    const usados = [];
+    nomesFalta(FT).slice(0, 8).forEach(x => {
+      const [px, py] = P(x.p);
+      if (px < 20 || px > MW - 20 || py < 12 || py > MH - 12 || usados.some(u => Math.hypot(u[0] - px, u[1] - py) < 70)) return;
+      usados.push([px, py]);
+      rot += `<text x="${px.toFixed(1)}" y="${(py - 7).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#9e1f17" stroke="#fff" stroke-width="3.2" paint-order="stroke">${esc(x.r)} · ${n0(x.m)} m</text>`;
+    });
+    return `<div style="position:relative;width:${MW}px;height:${MH}px;overflow:hidden;border-radius:6px;background:#eef1ee">${img}<svg viewBox="0 0 ${MW} ${MH}" width="${MW}" height="${MH}" style="position:absolute;left:0;top:0">${ring}<path d="${trk}" fill="none" stroke="#fff" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round" opacity=".85"/><path d="${trk}" fill="none" stroke="#1f3fbf" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/><path d="${ft}" fill="none" stroke="#fff" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/><path d="${ft}" fill="none" stroke="#d13b30" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>${rot}</svg><span style="position:absolute;right:4px;bottom:2px;font-size:8.5px;color:#444;background:rgba(255,255,255,.75);padding:0 3px;border-radius:3px">Mapa © Esri</span></div>`;
+  }
+  const LEGF = `<div class="lg"><span><i style="background:#d13b30"></i>falta realizar (rota programada sem passagem do caminhão)</span><span><i style="background:#1f3fbf"></i>por onde o caminhão passou (GPS)</span><span><i style="background:none;border-top:2px dashed #3b3b3b;height:0;width:16px;margin-top:4px"></i>limite do setor</span></div>`;
+
   // ------------------------------------------------------------ números de um conjunto de setores
   function numeros(S, T, RS, jor) {
     const F = S.filter(saiu), naos = S.filter(s => !saiu(s));
@@ -314,6 +397,16 @@
     });
     if (L2.length) B.push({ tab: true, tit: '<h2>Ruas que ficaram sem coleta</h2><div class="ob" style="margin:-2px 0 6px">Todas as ruas da rota programada com 40 m ou mais sem passagem do caminhão (a mais de 35 m do rastreio GPS), por setor. Setores encerrados; os que não saíram entram com a rota inteira.</div>', cab: '<tr><th>Rua</th><th>Bairro</th><th class="n">Extensão sem coleta</th></tr>', linhas: L2 });
     else if (fechado) B.push({ html: '<h2>Ruas que ficaram sem coleta</h2><div class="ob">Nenhum trecho da rota programada ficou sem passagem do caminhão nos setores encerrados.</div>' });
+    // mapas das rotas incompletas: o que ainda falta realizar
+    let prim = true;
+    S.filter(s => enc(s) && (s.lin || []).length).sort((a, b) => pg(a) - pg(b)).forEach(s => {
+      let m = '';
+      try { m = mapaFalta(s); } catch (e) { m = ''; }
+      if (!m) return;
+      const r = RS[s.s];
+      B.push({ html: `${prim ? '<h2>Rotas incompletas: o que falta realizar</h2>' : ''}<div style="font-size:12.5px;margin:${prim ? 0 : 4}px 0 5px"><i style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:${cor(s)}"></i><b>Setor ${esc(s.s)}</b> · ${n0(pg(s))}% pelo rastreio · ${esc((s.veic || []).join(', ') || '—')}${r && r.tot ? ` · <b style="color:#b02a20">falta ${km(r.tot)}</b>` : ''}</div>${m}${LEGF}` });
+      prim = false;
+    });
     return B;
   }
 
@@ -481,6 +574,7 @@
     const GR = grupos(D, CX);
     const pre = CX.p != null ? CX.p : 'c/' + CX.s + '/';
     const R = await consulta(pre);
+    RU = R;
     const RS = {};
     GR.forEach(T => T.S.forEach(s => {
       try {
@@ -503,12 +597,13 @@
     desenha();
     el.querySelector('.msg').remove();
     const nome = () => `fechamento-${CX.s}-${D.dia}${sel ? '-' + slug((GR.find(T => T.k === sel) || {}).n || sel) : ''}.png`;
-    el.querySelector('#rlPr').onclick = () => window.print();
+    const prontas = () => Promise.all([...el.querySelectorAll('.pgs img')].map(i => i.complete ? 0 : new Promise(ok => { i.addEventListener('load', ok); i.addEventListener('error', ok); setTimeout(ok, 10000); })));   // mapas carregados
+    el.querySelector('#rlPr').onclick = async () => { await prontas(); window.print(); };
     const ocupado = (b, f) => async () => { const t = b.textContent; b.disabled = true; b.textContent = 'Gerando…'; try { await f(); b.textContent = t; } catch (e) { b.textContent = 'Erro ao gerar'; setTimeout(() => { b.textContent = t; }, 4000); } b.disabled = false; };
     const bi = el.querySelector('#rlImg');
-    bi.onclick = ocupado(bi, async () => { const b = await imagem(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nome(); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); });
+    bi.onclick = ocupado(bi, async () => { await prontas(); const b = await imagem(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nome(); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); });
     const bs = el.querySelector('#rlSh');
-    if (bs) bs.onclick = ocupado(bs, async () => { const b = await imagem(); const f = new File([b], nome(), { type: 'image/png' }); try { await navigator.share({ files: [f], title: `Fechamento da coleta · ${CX.n}` }); } catch (e) { if (e.name !== 'AbortError') throw e; } });
+    if (bs) bs.onclick = ocupado(bs, async () => { await prontas(); const b = await imagem(); const f = new File([b], nome(), { type: 'image/png' }); try { await navigator.share({ files: [f], title: `Fechamento da coleta · ${CX.n}` }); } catch (e) { if (e.name !== 'AbortError') throw e; } });
     carregaLib().catch(() => {});
   };
 })();
