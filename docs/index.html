@@ -180,7 +180,7 @@ function stK(s){if(s._kD===D)return s._k;let k;const saiu=s.sit!=='AGUARDANDO'||
   if(s.sit==='GPS'){const d=idade(s.fim_gps);r=d!=null&&d<=30?'ex':'saiu'}
   else if(s.pe&&s.sit==='EXECUTADO')r=(s.pe.t==='coleta'||s.pe.t==='setor')&&(idade(s.pe.u)??99)<=30?'ex':'saiu';
   else{r=rastro(s);if(r==null)r=s.sit==='ATIVO'?'ex':'saiu'}
-  k=r==='ex'||r==='ainda'?'ex':r==='nunca'?(pg(s)>0?'in':'ag'):pg(s)>=META?'fi':'in'}
+  k=r==='ex'||r==='ainda'?'ex':r==='nunca'&&!(pg(s)>0)?'ag':pg(s)>=META?'fi':'in'}
  else k=pg(s)>=META?'fi':'in';
  s._kD=D;s._k=k;return k}
 const stTxt=s=>ST[stK(s)];
