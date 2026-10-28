@@ -935,6 +935,9 @@ def montar(s, dia, cad, at):
                     o["par"].append([(p.get("DataHoraInicio") or "")[11:16], (p.get("DataHoraFim") or "")[11:16], d, round(pt[0], 5), round(pt[1], 5)])
                     o["stop"] += d
         so_velho = bool(n_velho and not n_ok)
+        if dia_x != dia and n_ok:   # coleta de hoje que a INLOG lançou na agenda de ontem (na tela de hoje da INLOG o setor fica 0%)
+            o["agd"] = dia_x
+            print("   ", cod, "coleta de hoje lançada na agenda de", dia_x, "na INLOG")
         if so_velho:   # só havia controle de outro dia: hoje o setor ainda não saiu
             print("   ", cod, "só tem controle de outro dia na INLOG:", n_velho, "→ aguardando")
             o.update(sit="AGUARDANDO", pct=0, ult=None, pos=None)
