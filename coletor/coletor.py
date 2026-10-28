@@ -193,8 +193,30 @@ def enc(pts):
 
 def simplificar(pts, tol=6):
     """Douglas-Peucker em metros: tira pontos redundantes do rastreio sem mudar o desenho."""
+    return [pts[i] for i in simplificar_idx(pts, tol)]
+
+
+def rastro_com_hora(u, dia, folga=120):
+    """Rastreio simplificado [veículo, início, fim, pontos, horas]: horas = segundos desde a meia-noite do dia em cada ponto
+    (deltas em base 36). Guarda um ponto a cada 2 min, no máximo, para o painel mostrar a hora em que o caminhão passou em cada rua."""
+    T = [t for t, _ in u]
+    idx = simplificar_idx([q for _, q in u])
+    cheio = [idx[0]]
+    for j in idx[1:]:
+        i = cheio[-1]
+        for m in range(i + 1, j):
+            if (T[m] - T[cheio[-1]]).total_seconds() >= folga and (T[j] - T[m]).total_seconds() >= folga / 2:
+                cheio.append(m)
+        cheio.append(j)
+    zero = dt.datetime.fromisoformat(dia)
+    seg = [int((T[i] - zero).total_seconds()) for i in cheio]
+    return enc([u[i][1] for i in cheio]), ",".join(b36(b - a) for a, b in zip([0] + seg, seg))
+
+
+def simplificar_idx(pts, tol=6):
+    """Índices dos pontos que ficam no Douglas-Peucker."""
     if len(pts) < 3:
-        return list(pts)
+        return list(range(len(pts)))
     manter, pilha = {0, len(pts) - 1}, [(0, len(pts) - 1)]
     while pilha:
         i, j = pilha.pop()
@@ -213,7 +235,7 @@ def simplificar(pts, tol=6):
                 best, k = dd, m
         if best > tol:
             manter.add(k); pilha += [(i, k), (k, j)]
-    return [pts[i] for i in sorted(manter)]
+    return sorted(manter)
 
 
 def cobertura(lin, trv, raio=25, vel_max=25, amostra=None):
@@ -320,7 +342,7 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120):
         t_fim = b if t_fim is None or b > t_fim else t_fim
         if ult is None or tr[-1][0] > ult[0]:
             ult = tr[-1]
-        o["gps"].append([v, a.strftime("%H:%M"), b.strftime("%H:%M"), enc(simplificar([x[1] for x in seg]))])
+        o["gps"].append([v, a.strftime("%H:%M"), b.strftime("%H:%M"), *rastro_com_hora([(x[0], x[1]) for x in seg], dia)])
     o["dist"] = round(km, 1)
     if t_fim > t_ini:
         o["vel"] = round(km / ((t_fim - t_ini).total_seconds() / 3600), 1)
@@ -929,7 +951,7 @@ def montar(s, dia, cad, at):
         for v, tr in trilhas.items():
             u = sorted(dict(tr).items())
             if len(u) > 1:
-                o["gps"].append([v, u[0][0].strftime("%H:%M"), u[-1][0].strftime("%H:%M"), enc(simplificar([q for _, q in u]))])
+                o["gps"].append([v, u[0][0].strftime("%H:%M"), u[-1][0].strftime("%H:%M"), *rastro_com_hora(u, dia)])
         o["_tr"] = {v: (min(t for t, _ in tr), max(t for t, _ in tr)) for v, tr in trilhas.items() if tr}
         sai = []
         for v, tr in (trilhas.items() if gar else []):
