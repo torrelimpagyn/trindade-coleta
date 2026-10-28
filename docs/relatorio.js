@@ -294,7 +294,7 @@
     const linhas = S.map(s => {
       const e = extra(s, T, jor), r = RS[s.s];
       return `<tr><td><i style="background:${cor(s)}"></i><b>${esc(s.s)}</b></td><td>${esc((s.veic || []).join(', ') || '—')}</td>
-        <td class="n"><b>${saiu(s) ? n0(pg(s)) + '%' : '—'}</b></td><td class="n">${saiu(s) && s.sit !== 'GPS' ? n0(s.pct || 0) + '%' : '—'}</td><td>${esc(situ(s))}</td>
+        <td class="n"><b>${saiu(s) ? n0(pg(s)) + '%' : '—'}</b></td><td class="n">${saiu(s) && s.sit !== 'GPS' ? n0(s.pct || 0) + '%' + (s.agd ? `<br><small>agenda ${s.agd.slice(8, 10)}/${s.agd.slice(5, 7)}</small>` : '') : '—'}</td><td>${esc(situ(s))}</td>
         <td class="n">${s.saida || s.volta ? (s.saida || '—') + ' – ' + (s.volta || '—') : '—'}</td>
         <td class="n">${e ? (e.he ? '<b style="color:#a86f00">' + hmin(e.he) + '</b>' : '0') : '—'}</td>
         <td class="n">${r && r.tot ? km(r.tot) : '—'}</td></tr>`;
