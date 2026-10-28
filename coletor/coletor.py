@@ -346,6 +346,71 @@ def diag_cobertura(lin, trv, vel_max=VEL_COLETA):
         pc[0], vel_max, RAIO_GPS, *pc[1:], tot / 1000, RAIO_GPS, *faixa)
 
 
+_CAMPOS = set()
+SENS = re.compile(r"sensor|entrada|saida|compact|tomada|pto|evento|porta|bascul|acion|input|digital", re.I)
+
+
+def diag_campos(nome, obj, lista=None):
+    """Diagnóstico (só no log, uma vez por execução): nomes dos campos que a INLOG manda e valores dos que parecem sensor."""
+    if CID.get("slug") != "trindade" or nome in _CAMPOS or not isinstance(obj, dict):
+        return
+    _CAMPOS.add(nome)
+    print("    campos", nome, sorted(obj.keys()))
+    for k in sorted(obj):
+        v0 = obj[k]
+        if isinstance(v0, dict):
+            print("    campo", nome, k, "objeto:", sorted(v0.keys()))
+        elif isinstance(v0, list) and v0 and isinstance(v0[0], dict):
+            print("    campo", nome, k, "lista de", len(v0), ":", sorted(v0[0].keys()))
+        if SENS.search(k):
+            vals = {}
+            for h in lista or [obj]:
+                v = h.get(k) if isinstance(h, dict) else None
+                v = v if isinstance(v, (bool, int, float)) or v is None else str(v)[:30]
+                vals[v] = vals.get(v, 0) + 1
+            print("    campo", nome, k, sorted(vals.items(), key=lambda x: -x[1])[:6])
+
+
+def previsao(lin, trv, pct, janela=45):
+    """Corrida contra o relógio: ritmo de cobertura da rota pelo GPS (% por hora, últimos 45 min) e hora prevista para chegar a 95%."""
+    pts = [p for tr in trv.values() for p in tr]
+    if not pts:
+        return {}
+    t1, t0 = max(p[0] for p in pts), min(p[0] for p in pts)
+    if (dt.datetime.now(TZ).replace(tzinfo=None) - t1).total_seconds() > 1800:
+        return {}   # sem GPS recente: o setor não está rodando agora
+    corte = t1 - dt.timedelta(minutes=janela)
+    if corte <= t0 + dt.timedelta(minutes=10):
+        h, ganho = (t1 - t0).total_seconds() / 3600, pct
+    else:
+        antes = cobertura(lin, {v: [p for p in tr if p[0] <= corte] for v, tr in trv.items()}) or 0
+        h, ganho = janela / 60, pct - antes
+    if h < 0.25:
+        return {}
+    ritmo = ganho / h
+    out = {"ritmo": round(ritmo, 1)}
+    if ritmo >= 1 and (95 - pct) / ritmo <= 12:
+        out["eta"] = (t1 + dt.timedelta(hours=(95 - pct) / ritmo)).strftime("%H:%M")
+    return out
+
+
+def saida_aterro(setores, por_veic, A):
+    """Último ponto de coleta (devagar, dentro do setor) antes de cada ida ao aterro, para marcar no mapa do setor."""
+    por_s = {o["s"]: o for o in setores}
+    for a in A:
+        ini = dt.datetime.strptime(a["ini"], "%Y-%m-%d %H:%M")
+        pts = por_veic.get(a["v"]) or {}
+        for cod in a["s"]:
+            o = por_s.get(cod)
+            if not o:
+                continue
+            aneis = [r for r in o.get("ring") or [] if len(r) > 2]
+            cand = [t for t, (pos, vel, c) in pts.items() if c == cod and t < ini and vel <= 25 and (not aneis or any(dentro(pos, r) for r in aneis))]
+            if cand:
+                t = max(cand)
+                o.setdefault("uat", []).append([round(pts[t][0][0], 5), round(pts[t][0][1], 5), t.strftime("%H:%M"), a["v"], a["ini"][11:]])
+
+
 def url_passagens(o, dia):
     pts_area = [tuple(q) for _, l in o["lin"] for q in l]
     if not pts_area:
@@ -816,6 +881,9 @@ def garagem_hist(s, setores, gar, dia, at):
         try:
             pts = sorted((dt.datetime.fromisoformat(p["DataHora"][:19]), (p["Latitude"] / 1e6, p["Longitude"] / 1e6))
                          for p in pegar_json(s, u) or [] if p.get("Latitude") and p.get("DataHora"))
+            if CID.get("slug") == "trindade" and "historico" not in _CAMPOS:
+                r_ = pegar_json(s, u) or []
+                diag_campos("historico", r_[0] if r_ else None, r_)
         except (SystemExit, Exception) as e:
             print("  histórico do veículo", cv, "indisponível:", e)
             continue
@@ -984,6 +1052,8 @@ def montar(s, dia, cad, at):
                 if ent and (o.get("_ent") is None or ent < o["_ent"]):
                     o["_ent"], o["entrada"] = ent, ent[11:16]
                 H = c.get("RastreamentoHistorico") or []
+                diag_campos("controle", c); diag_campos("ponto", H[0] if H else None, H)
+                diag_campos("parada", (c.get("PontosParada") or [None])[0], c.get("PontosParada"))
                 tr = trilhas.setdefault(v or "?", [])
                 for h in H:
                     t = dt.datetime.fromisoformat(h["DataHoraCompleta"][:19])
@@ -1029,6 +1099,17 @@ def montar(s, dia, cad, at):
             if len(u) > 1:
                 o["gps"].append([v, u[0][0].strftime("%H:%M"), u[-1][0].strftime("%H:%M"), *rastro_com_hora(u, dia)])
         o["_tr"] = {v: (min(t for t, _ in tr), max(t for t, _ in tr)) for v, tr in trilhas.items() if tr}
+        if at != "final":   # posição mais recente de cada caminhão do setor e a velocidade média dos últimos 10 min (placa no mapa)
+            o["vivo"] = []
+            for v, pts_v in trv.items():
+                u_ = sorted(pts_v, key=lambda p: p[0])
+                if not u_:
+                    continue
+                tl = u_[-1][0]
+                rec = [p for p in u_ if (tl - p[0]).total_seconds() <= 600]
+                h_ = (rec[-1][0] - rec[0][0]).total_seconds() / 3600
+                km_ = sum(dist_m(a[1], b[1]) for a, b in zip(rec, rec[1:])) / 1000
+                o["vivo"].append([v, round(u_[-1][1][0], 5), round(u_[-1][1][1], 5), tl.strftime("%H:%M"), round(u_[-1][2] or 0), round(km_ / h_) if h_ >= .05 else None])
         sai = []
         for v, tr in (trilhas.items() if gar else []):
             a, b, c0 = garagem(tr, gar)
@@ -1053,6 +1134,11 @@ def montar(s, dia, cad, at):
                 if trv and o["lin"]:
                     am = []
                     o["pgps"] = cobertura(o["lin"], trv, amostra=am)   # percentual executado medido pelo GPS
+                    if at != "final" and o["pgps"] is not None and o["pgps"] < 95:
+                        try:
+                            o.update(previsao(o["lin"], trv, o["pgps"]))   # corrida contra o relógio
+                        except Exception as e:
+                            print("  previsão", cod, "falhou:", e)
                     if at == "final" or o["sit"] not in ("ATIVO", "AGUARDANDO"):   # setor encerrado
                         o.update(ruas_faltando(am))   # ruas da rota por onde o GPS não passou coletando
                     if at != "final" and (o["pgps"] or 0) < 95:
@@ -1120,8 +1206,14 @@ def montar(s, dia, cad, at):
         except Exception as e:
             print("  passagens", o["s"], "falharam:", e)
     limpar_respostas()
+    A = aterro(por_veic, tuple(cad["aterro"])) if cad.get("aterro") else None
+    if A:
+        try:
+            saida_aterro(setores, por_veic, A)
+        except Exception as e:
+            print("  último ponto antes do aterro falhou:", e)
     return {"dia": dia, "at": at, "cidade": CID["nome"], "garagem": cad.get("garagem"), "S": setores, "jornada": CID.get("jornada", 440),
-            "aterro": aterro(por_veic, tuple(cad["aterro"])) if cad.get("aterro") else None}, gps_dia
+            "aterro": A}, gps_dia
 
 
 def indice_hist():
