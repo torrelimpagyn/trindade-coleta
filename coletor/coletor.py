@@ -239,9 +239,10 @@ def simplificar_idx(pts, tol=6):
 
 
 VEL_COLETA = 40   # km/h: trecho rodado acima disso (nas duas pontas e na média) é deslocamento, não coleta
+RAIO_GPS = 35     # metros entre o GPS e a rua da rota (erro do GPS + largura de avenidas com canteiro)
 
 
-def cobertura(lin, trv, raio=25, vel_max=VEL_COLETA, amostra=None):
+def cobertura(lin, trv, raio=RAIO_GPS, vel_max=VEL_COLETA, amostra=None):
     """Percentual da rota programada (lin) por onde o GPS do caminhão passou em velocidade de coleta, a até `raio` metros.
     trv = {veículo: [(hora, (lat, lon), velocidade)]}."""
     xy = lambda p: (p[1] * 111320 * C, p[0] * 110574)
@@ -310,7 +311,7 @@ def diag_cobertura(lin, trv, vel_max=VEL_COLETA):
             for j in range(n + 1):
                 q = (A[0] + (B[0] - A[0]) * j / n, A[1] + (B[1] - A[1]) * j / n)
                 grade.setdefault((int(q[0] // 50), int(q[1] // 50)), set()).add(k)
-    tot, ok, faixa = 0, [0] * 6, [0, 0, 0, 0]   # sem coleta: GPS a 25-35 m, 35-50 m, 50-75 m, mais longe
+    tot, ok, faixa = 0, [0] * 6, [0, 0, 0]   # sem coleta: GPS a até 50 m, 50-75 m, mais longe
     for _, pts in lin:
         P = [xy(q) for q in pts]
         for a, b in zip(P, P[1:]):
@@ -332,17 +333,17 @@ def diag_cobertura(lin, trv, vel_max=VEL_COLETA):
                                     md[i] = dd
                 tot += L / n
                 for i in range(5):
-                    if md[i] <= 25:
+                    if md[i] <= (25 if i == 0 else RAIO_GPS):
                         ok[i] += L / n
                 if md[3] <= 40:
                     ok[5] += L / n
-                if md[1] > 25:
-                    faixa[0 if md[4] <= 35 else 1 if md[4] <= 50 else 2 if md[4] <= 75 else 3] += L / n
+                if md[1] > RAIO_GPS:
+                    faixa[0 if md[4] <= 50 else 1 if md[4] <= 75 else 2] += L / n
     if not tot:
         return "sem rota"
     pc = [round(100 * x / tot, 1) for x in ok]
-    return "antes(25km/h)=%s agora(%dkm/h)=%s C=%s sem_limite=%s mapa=%s D40=%s · rota %.1f km · sem coleta com GPS a 25-35 m: %d m, 35-50 m: %d m, 50-75 m: %d m, mais longe: %d m" % (
-        pc[0], vel_max, *pc[1:], tot / 1000, *faixa)
+    return "antes(25 km/h, 25 m)=%s agora(%d km/h, %d m)=%s C=%s sem_limite=%s mapa=%s D40=%s · rota %.1f km · sem coleta com GPS a %d-50 m: %d m, 50-75 m: %d m, mais longe: %d m" % (
+        pc[0], vel_max, RAIO_GPS, *pc[1:], tot / 1000, RAIO_GPS, *faixa)
 
 
 def url_passagens(o, dia):
