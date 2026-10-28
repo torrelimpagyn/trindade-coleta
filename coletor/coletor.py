@@ -346,6 +346,28 @@ def diag_cobertura(lin, trv, vel_max=VEL_COLETA):
         pc[0], vel_max, RAIO_GPS, *pc[1:], tot / 1000, RAIO_GPS, *faixa)
 
 
+def coletou_no_setor(c, aneis, minimo=20):
+    """O caminhão do controle andou em velocidade de coleta dentro do setor (polígono ou até 30 m da borda)?
+    Controle aberto no setor errado (ex.: motorista escolheu outro setor na INLOG) não tem esses pontos."""
+    aneis = [list(r) + [r[0]] for r in aneis or [] if len(r) > 2]
+    if not aneis:
+        return True
+    la = [q[0] for r in aneis for q in r]; lo = [q[1] for r in aneis for q in r]
+    cx = (min(la) - .001, max(la) + .001, min(lo) - .001, max(lo) + .001)
+    n = 0
+    for h in c.get("RastreamentoHistorico") or []:
+        if (h.get("Velocidade") or 0) > 25 or not h.get("Posicao"):
+            continue
+        p = (h["Posicao"]["Latitude"], h["Posicao"]["Longitude"])
+        if not (cx[0] <= p[0] <= cx[1] and cx[2] <= p[1] <= cx[3]):
+            continue
+        if any(dentro(p, r) for r in aneis) or any(dist_linha(p, r) <= 30 for r in aneis):
+            n += 1
+            if n >= minimo:
+                return True
+    return False
+
+
 def previsao(lin, trv, pct, janela=45):
     """Corrida contra o relógio: ritmo de cobertura da rota pelo GPS (% por hora, últimos 45 min) e hora prevista para chegar a 95%."""
     pts = [p for tr in trv.values() for p in tr]
@@ -1009,6 +1031,21 @@ def montar(s, dia, cad, at):
                 ic = inicio_controle(c)
                 if ic and not (jan_ini <= ic < jan_fim):
                     n_velho += 1   # controle de outro dia (a INLOG às vezes devolve o de ontem): não entra nos dados de hoje
+                    continue
+                vc = (c.get("Veiculo") or {}).get("Identificador")
+                if fd != dia:   # controle na agenda de ontem: só entra se começou no horário do turno do setor e o caminhão coletou nele
+                    h0 = INICIO_TURNO.get(norm(x.get("Turno") or ""))
+                    if ic and h0 is not None and ic < jan_ini.replace(hour=0) + dt.timedelta(hours=h0 - 5):
+                        print("   ", cod, "controle de", vc, "das", ic.strftime("%H:%M"), "na agenda de ontem fora do turno", x.get("Turno"), "→ não entra")
+                        n_velho += 1
+                        continue
+                    if not coletou_no_setor(c, o["ring"]):
+                        print("   ", cod, "controle de", vc, "na agenda de ontem sem coleta no setor pelo GPS → não entra")
+                        n_velho += 1
+                        continue
+                elif c.get("DataHoraFinalizacao") and not coletou_no_setor(c, o["ring"]):
+                    print("   ", cod, "controle de", vc, "fechado sem coleta no setor pelo GPS (setor errado na INLOG?) → não entra")
+                    n_velho += 1
                     continue
                 n_ok += 1
                 if fd != dia:
