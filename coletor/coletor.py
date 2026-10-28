@@ -1040,8 +1040,8 @@ def montar(s, dia, cad, at):
         com = sorted([x for x in sai if x[0]], key=lambda x: x[0])
         if com:
             o["saida"] = com[0][0].strftime("%H:%M")
-            vs = [x[1] for x in com if x[1]]
-            o["volta"] = max(vs).strftime("%H:%M") if vs else None
+            vs = [x[1] for x in sai]   # retorno só quando todos os caminhões que rodaram no setor voltaram à garagem
+            o["volta"] = max(vs).strftime("%H:%M") if vs and all(vs) else None
         elif sai:
             o["rast0"] = min(x[2] for x in sai).strftime("%H:%M")   # GPS já começou fora da garagem
         if t0 and t1 and t1 > t0:
