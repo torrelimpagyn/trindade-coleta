@@ -165,7 +165,7 @@
     return { ruas: c.streets, cel, K, C };
   }
   function porRota(s, R, comGps) {   // metros da rota programada sem passagem do caminhão, por rua da consulta
-    const C = Math.cos(((s.lin[0][1][0] || [-16])[0]) * Math.PI / 180), xy = p => [p[1] * 111320 * C, p[0] * 110574], G = new Map(), T = 25;
+    const C = Math.cos(((s.lin[0][1][0] || [-16])[0]) * Math.PI / 180), xy = p => [p[1] * 111320 * C, p[0] * 110574], G = new Map(), T = 35;
     if (comGps) s.gps.forEach(g => {
       const P = dec(g[3]).map(xy);
       for (let j = 0; j + 1 < P.length; j++) {
@@ -312,7 +312,7 @@
       if (!l.length) L2.push('<tr><td colspan="3" class="mais">Ruas não identificadas: cadastro de ruas da cidade indisponível.</td></tr>');
       l.forEach(x => L2.push(`<tr><td>${esc(x.r)}</td><td>${esc(x.b || '—')}</td><td class="n">${n0(x.m)} m</td></tr>`));
     });
-    if (L2.length) B.push({ tab: true, tit: '<h2>Ruas que ficaram sem coleta</h2><div class="ob" style="margin:-2px 0 6px">Todas as ruas da rota programada com 40 m ou mais sem passagem do caminhão (a mais de 25 m do rastreio GPS), por setor. Setores encerrados; os que não saíram entram com a rota inteira.</div>', cab: '<tr><th>Rua</th><th>Bairro</th><th class="n">Extensão sem coleta</th></tr>', linhas: L2 });
+    if (L2.length) B.push({ tab: true, tit: '<h2>Ruas que ficaram sem coleta</h2><div class="ob" style="margin:-2px 0 6px">Todas as ruas da rota programada com 40 m ou mais sem passagem do caminhão (a mais de 35 m do rastreio GPS), por setor. Setores encerrados; os que não saíram entram com a rota inteira.</div>', cab: '<tr><th>Rua</th><th>Bairro</th><th class="n">Extensão sem coleta</th></tr>', linhas: L2 });
     else if (fechado) B.push({ html: '<h2>Ruas que ficaram sem coleta</h2><div class="ob">Nenhum trecho da rota programada ficou sem passagem do caminhão nos setores encerrados.</div>' });
     return B;
   }
