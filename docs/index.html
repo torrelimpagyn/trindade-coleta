@@ -55,6 +55,11 @@ header h1{font-size:17px;margin:0}
 .stp{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;border-radius:999px;padding:2px 8px;width:max-content}
 .stp.ex{background:var(--exBg);color:var(--exT)}.stp.fi{background:var(--okBg);color:var(--okT)}.stp.in.wa{background:var(--waBg);color:var(--waT)}.stp.in.ba{background:var(--baBg);color:var(--baT)}.stp.ag{background:var(--agBg);color:var(--mut)}
 .stp .dt{width:7px;height:7px;border-radius:50%;background:currentColor}.stp.ex .dt{animation:pisca 1.2s infinite}
+.apo{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;background:rgba(42,111,219,.14);color:var(--exT);width:max-content}.apo::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:pisca 1.2s infinite}
+.eta{margin:-4px 12px 10px;font-size:11.5px;color:var(--mut)}.eta b{color:var(--ink)}.eta.late{color:var(--baT);font-weight:700}.eta.late b{color:inherit}.eta.late .al{animation:pisca 1.2s infinite}
+.tk{position:relative;width:28px;height:28px}.tk .pl{position:absolute;bottom:33px;left:50%;transform:translateX(-50%);white-space:nowrap;font:700 10.5px/1.1 system-ui,sans-serif;padding:3px 6px;border-radius:6px;background:rgba(20,35,28,.88);color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}.tk .pl.co{background:#1a8a4a}.tk .pl.pr{background:#6b6f6d}.tk .pl.de{background:#c46a00}
+.uat{background:#7a5a2e;border:2px solid #fff;border-radius:50%;width:22px;height:22px;box-shadow:0 1px 5px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:11px}
+.cpt{width:26px;height:26px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))}
 @keyframes pisca{50%{opacity:.25}}
 .vei{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bdg{font-size:11px;font-weight:800;color:#8a6500;background:#fff1c2;border-radius:999px;padding:1px 7px;margin-left:4px}@media(prefers-color-scheme:dark){.bdg{background:#4a3a0c;color:#ffd86b}}
@@ -153,6 +158,15 @@ function cidades(){const sel=document.getElementById('cid');sel.innerHTML=CIDADE
 const META=95,LIM=80;
 const pg=s=>s.pgps!=null?s.pgps:(s.pct||0);          // percentual que vale: o do rastreio (GPS); sem rota programada, o da INLOG
 const agd=s=>s.agd?s.agd.slice(8,10)+'/'+s.agd.slice(5,7):'';   // coleta de hoje que a INLOG lançou na agenda de ontem
+const atS=s=>(D.aterro||[]).filter(x=>(x.s||[]).includes(s.s));   // viagens ao aterro de cada rota (GPS)
+const m24=m=>m==null?null:m<240?m+1440:m;
+function fimExp(s){const cfg=EXP[CX.s];if(cfg){const [y,mo,da]=D.dia.split('-'),sab=new Date(+y,mo-1,+da).getDay()===6,T=cfg.find(T=>T.k===tno(s));if(T)return sab?T.sab[1]:T.fim}
+ const J=janela(s);return J?J[0]+(D.jornada||440):null}   // fim do expediente do turno (nas cidades sem expediente cadastrado: saída + jornada)
+function apoio(s){   // caminhões que entraram no setor depois do primeiro: apoio (ativo = GPS no setor há até 20 min)
+ const M=new Map();(s.gps||[]).forEach(g=>{const v=nv(g[0]);let a=m24(mins(g[1])),b=m24(mins(g[2]));if(a==null)return;if(b==null)b=a;while(b<a)b+=1440;const x=M.get(v);if(!x)M.set(v,{v,a,b});else{x.a=Math.min(x.a,a);x.b=Math.max(x.b,b)}});
+ const L=[...M.values()].sort((x,y)=>x.a-y.a);return L.slice(1).map(x=>({...x,ativo:aoVivo()&&(idade(hora(x.b))??99)<=20}))}
+function etaHtml(s,p){if(!aoVivo()||s.ritmo==null||p>=META)return '';const e=m24(mins(s.eta)),f=fimExp(s),late=e!=null&&f!=null&&e>f;   // corrida contra o relógio
+ return `<div class="eta${late||!s.eta?' late':''}">⏱ ${s.eta?`Previsão de chegar a 95%: <b>${s.eta}</b>`:'Ritmo baixo demais para prever o fim'} · ritmo ${nf(s.ritmo)}%/h${late?` · <span class="al">⚠ passa do expediente (até ${hora(f)})</span>`:f!=null&&s.eta?` · expediente até ${hora(f)}`:''}</div>`}
 const nivel=v=>v>=META?'ok':v>=LIM?'wa':'ba';
 const HEX={ok:'#1f9d55',wa:'#e0a100',ba:'#d64541',ex:'#2a6fdb',ag:'#b5bfba'};
 const CT={ok:'var(--okT)',wa:'var(--waT)',ba:'var(--baT)'};
@@ -252,10 +266,10 @@ function renderCol(){const S0=D.S.filter(s=>tno(s)===TURNO),S=S0.slice();
 function card(s){const k=stK(s),p=pg(s),lv=nivel(p),g=s.pgps!=null,ag=k==='ag',w0=PREV[s.s]??0,ve=[...new Set([...(s.veic||[]),...(s.gps||[]).map(x=>nv(x[0]))].map(nv))].filter(v=>v&&v!=='?');
  const cl=`k-${k} l-${lv}`,cor=ag?HEX.ag:HEX[lv];
  return `<div class="sec ${cl} ${OPEN.has(s.s)?'open':''}" data-c="${esc(s.s)}">
-  <div class="sh"><span class="nm">${esc(s.s)}</span><div class="mid"><span class="stp ${k} ${k==='in'?(lv==='ok'?'wa':lv):''}"><span class="dt"></span>${ST[k]}${k!=='ag'&&p>=META?'<span class="bdg">🏆 meta</span>':''}</span>${ve.length?`<span class="vei">🚛 ${esc(ve.join(' · '))}</span>`:''}</div>
+  <div class="sh"><span class="nm">${esc(s.s)}</span><div class="mid"><span class="stp ${k} ${k==='in'?(lv==='ok'?'wa':lv):''}"><span class="dt"></span>${ST[k]}${k!=='ag'&&p>=META?'<span class="bdg">🏆 meta</span>':''}</span>${ve.length?`<span class="vei">🚛 ${esc(ve.join(' · '))}</span>`:''}${k==='ex'?apoio(s).filter(x=>x.ativo).map(x=>`<span class="apo">🤝 apoio ${esc(x.v)} · há ${hm((idade(hora(x.a))??0)*60)}</span>`).join(''):''}${atS(s).length?`<span class="vei">⛰ ${atS(s).length} ${atS(s).length>1?'viagens':'viagem'} ao aterro</span>`:''}</div>
   <span class="pc" style="color:${ag?'var(--mut)':CT[lv]}">${ag?'—':nf(p)+'%'}<small>${g?'RASTREIO':'INLOG'}</small></span><span class="ch">▼</span></div>
   <div class="bar"><span data-w="${ag?0:Math.min(100,p)}" style="width:${ag?0:w0}%;background:${cor}"></span><i class="meta"></i></div>
-  ${g?`<div class="ib"><small>INLOG${s.agd?' · agenda '+agd(s):''}</small><div class="bar"><span data-w="${Math.min(100,s.pct||0)}" style="width:0"></span></div><b>${nf(s.pct||0)}%</b></div>`:'<div style="height:6px"></div>'}
+  ${g?`<div class="ib"><small>INLOG${s.agd?' · agenda '+agd(s):''}</small><div class="bar"><span data-w="${Math.min(100,s.pct||0)}" style="width:0"></span></div><b>${nf(s.pct||0)}%</b></div>`:'<div style="height:6px"></div>'}${k==='ex'?etaHtml(s,p):''}
   <div class="det"><span class="pill">${esc(s.s)} · ${ST[k]}</span>
    <div class="kv"><span>Pelo rastreio (GPS)</span><b style="color:${CT[lv]}">${g?nf(s.pgps)+'%':'sem rota programada'}</b></div>
    <div class="kv"><span>Pela INLOG</span><b>${s.sit==='GPS'?'não registrou (0%)':nf(s.pct||0)+'%'}</b></div>
@@ -267,6 +281,10 @@ function card(s){const k=stK(s),p=pg(s),lv=nivel(p),g=s.pgps!=null,ag=k==='ag',w
    ${(ve.length?ve:['—']).map((v,i)=>`<div class="kv"><span>Caminhão ${i+1}</span><b>${esc(v)}</b></div>`).join('')}
    <div class="kv"><span>Distância percorrida</span><b>${s.dist?nf(s.dist,1)+' km':'—'}</b></div>
    <div class="kv"><span>Velocidade média</span><b>${s.vel?nf(s.vel,1)+' km/h':'—'}</b></div>
+   ${(s.cpt||[]).length?`<div class="kv"><span>Compactações (sensor do compactador)</span><b>${s.cpt.length} · ${hm(s.cpt.reduce((a,c)=>a+(c[3]||0),0))}</b></div>`:''}
+   <div class="kv"><span>Viagens ao aterro</span><b>${atS(s).length?atS(s).length+' · '+atS(s).map(x=>(x.ini||'').slice(11,16)).join(', '):'nenhuma'}</b></div>
+   ${apoio(s).map(x=>`<div class="kv"><span>Apoio${x.ativo?' (no setor agora)':''}</span><b>${esc(x.v)} · ${hora(x.a)}–${x.ativo?'agora':hora(x.b)} (${hm(((x.ativo?(idade(hora(x.a))??0):x.b-x.a))*60)})</b></div>`).join('')}
+   ${s.eta?`<div class="kv"><span>Previsão de chegar a 95% (ritmo ${nf(s.ritmo)}%/h)</span><b>${s.eta}</b></div>`:''}
    <div class="kv"><span>Paradas longas no setor (5 min ou mais)</span><b>${(s.par||[]).length?(s.par.length+' · '+hm(s.stop)):'nenhuma'}</b></div>
    ${(s.par||[]).map(p=>`<a class="par" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p[3]},${p[4]}"><span>${p[0]} às ${p[1]}</span><b>${hm(p[2])}</b><i>ver local ›</i></a>`).join('')}
    <div class="kv"><span>Última posição</span><b>${s.ult||'—'}</b></div>
@@ -321,6 +339,11 @@ function mapa(){document.getElementById('sheet').classList.add('open');if(ANIM){
   lay=L.layerGroup().addTo(map);try{new ResizeObserver(()=>map.invalidateSize({pan:false})).observe(document.getElementById('map'))}catch(e){}}
  lay.clearLayers()}
 const icone=(h,c='ini',z=24)=>L.divIcon({className:'',html:`<div class="${c}">${h}</div>`,iconSize:[z,z],iconAnchor:[z/2,z/2]});
+function marcaCaminhao(x){   // caminhão na posição mais recente do GPS, com placa da velocidade (média dos últimos 10 min)
+ const vel=x[5]!=null?x[5]:x[4],cl=vel<=1?'pr':vel<=25?'co':vel<=40?'':'de';
+ L.marker([x[1],x[2]],{icon:L.divIcon({className:'',html:`<div class="tk"><span class="pl ${cl}">${esc(nv(x[0]))} · ${vel} km/h</span><div class="truck">🚛</div></div>`,iconSize:[28,28],iconAnchor:[14,14]}),zIndexOffset:1000})
+  .bindPopup(`<b>${esc(nv(x[0]))}</b><br>Posição das ${x[3]} · ${x[4]} km/h no último ponto · média dos últimos 10 min: ${x[5]!=null?x[5]+' km/h':'—'}<a class="nav" target="_blank" rel="noopener" href="${rotaAte([x[1],x[2]])}">🚛 Ir até o caminhão</a>`).addTo(lay)}
+const CPT='<svg class="cpt" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#fff"/><circle cx="16" cy="16" r="13.5" fill="#5b3fa8"/><rect x="6" y="12" width="13" height="9" rx="1.5" fill="#fff"/><path d="M19 21 L19 12 L25 9 L25 12 L21.5 13.5 L21.5 21 Z" fill="#ffd84d"/><path d="M19 12 L26 7.5" stroke="#ffd84d" stroke-width="2" stroke-linecap="round"/><circle cx="9.5" cy="22.5" r="2.3" fill="#222" stroke="#fff" stroke-width="1"/><circle cx="17" cy="22.5" r="2.3" fill="#222" stroke="#fff" stroke-width="1"/></svg>';   // compactador aberto
 function openMap(c){const s=D.S.find(x=>x.s===c);mapa();
  (s.ring||[]).forEach(r=>L.polygon(r,{color:'#555',weight:1.5,dashArray:'5 4',fill:false}).addTo(lay));
  GL={r:L.layerGroup()};
@@ -331,18 +354,26 @@ function openMap(c){const s=D.S.find(x=>x.s===c);mapa();
  Object.keys(GL).forEach(k=>{if(k!=='r'||VIS.r)GL[k].addTo(lay)});
  (s.par||[]).forEach(p=>L.circleMarker([p[3],p[4]],{radius:9,color:'#fff',weight:2,fillColor:'#e08a00',fillOpacity:1}).bindTooltip(`Parada ${p[0]}–${p[1]} · ${hm(p[2])}`).addTo(lay));
  if(s.ini)L.marker(s.ini.slice(0,2),{icon:icone('🏁'),zIndexOffset:500}).bindPopup(`<b>Início da rota · ${s.ini[2]}</b><br>Primeiro ponto do caminhão dentro do setor.${navIni(s)}`).addTo(lay);
- if(vivo(s))L.marker(s.pos,{icon:icone('🚛','truck',28),zIndexOffset:1000}).bindPopup(`<b>${esc((s.veic||[]).join(', ')||'Caminhão')}</b><br>Posição das ${esc(s.ult||'—')}${navVei(s)}`).addTo(lay);
+ (s.cpt||[]).forEach(c=>L.marker([c[0],c[1]],{icon:L.divIcon({className:'',html:CPT,iconSize:[26,26],iconAnchor:[13,13]}),zIndexOffset:400}).bindTooltip(`Compactação · ${c[2]}${c[3]?' · '+hm(c[3]):''} · ${esc(nv(c[4]||''))}`).addTo(lay));
+ (s.uat||[]).forEach(u=>L.marker([u[0],u[1]],{icon:icone('⛰','uat',22),zIndexOffset:600}).bindTooltip(`Último ponto de coleta antes do aterro · ${u[2]}<br>${esc(nv(u[3]))} chegou ao aterro às ${u[4]}`).addTo(lay));
+ const VV=aoVivo()?(s.vivo||[]).filter(x=>(idade(x[3])??99)<=20):[];
+ if(VV.length)VV.forEach(x=>marcaCaminhao(x));
+ else if(vivo(s))L.marker(s.pos,{icon:icone('🚛','truck',28),zIndexOffset:1000}).bindPopup(`<b>${esc((s.veic||[]).join(', ')||'Caminhão')}</b><br>Posição das ${esc(s.ult||'—')}${navVei(s)}`).addTo(lay);
  document.getElementById('shT').textContent='Setor '+s.s+' · '+stTxt(s)+' · rastreio '+(s.pgps!=null?nf(s.pgps)+'%':'—')+' · INLOG '+nf(s.pct||0)+'%'+(s.agd?' (agenda '+agd(s)+')':'');
- document.getElementById('shF').innerHTML=`${esc((s.veic||[]).join(', '))} · última posição ${esc(s.ult||'—')}<div class="lt">${VS.map((v,i)=>`<button data-l="v${i}" class="on" style="--c:${cv(v)}">🚛 ${esc(v)}</button>`).join('')}<button data-l="r" class="${VIS.r?'on':''}">Falta coletar</button></div><div class="tlg">${VS.map(v=>{const G=T.filter(g=>g[0]===v);return `<div><i style="background:${cv(v)}"></i><span>Trajeto do caminhão <b style="margin:0">${esc(v)}</b> · ${G.map(g=>g[1]+'–'+g[2]).join(', ')}</span><b>${nf(G.reduce((a,g)=>a+compr(g[3]),0),1)} km</b></div>`}).join('')}<div><i style="background:${VERM}"></i><span>Rota programada sem passagem de caminhão</span><b>${FT.length?nf(FT.reduce((a,l)=>a+compr(l),0),1)+' km':'—'}</b></div></div><div class="leg"><span>👆 Passe o mouse (ou toque) no rastreio para ver a hora em que o caminhão passou</span><span><i style="background:#e08a00;width:10px;height:10px;border-radius:50%"></i>Parada longa</span>${s.ini?'<span><i style="background:#1a8a4a;width:10px;height:10px;border-radius:50%"></i>Início da rota</span>':''}${vivo(s)?'<span><i style="background:#2a78d6;width:10px;height:10px;border-radius:50%"></i>Caminhão (toque para ir até ele)</span>':''}</div>${navBtns(s)}`;
+ document.getElementById('shF').innerHTML=`${esc((s.veic||[]).join(', '))} · última posição ${esc(s.ult||'—')}<div class="lt">${VS.map((v,i)=>`<button data-l="v${i}" class="on" style="--c:${cv(v)}">🚛 ${esc(v)}</button>`).join('')}<button data-l="r" class="${VIS.r?'on':''}">Falta coletar</button></div><div class="tlg">${VS.map(v=>{const G=T.filter(g=>g[0]===v);return `<div><i style="background:${cv(v)}"></i><span>Trajeto do caminhão <b style="margin:0">${esc(v)}</b> · ${G.map(g=>g[1]+'–'+g[2]).join(', ')}</span><b>${nf(G.reduce((a,g)=>a+compr(g[3]),0),1)} km</b></div>`}).join('')}<div><i style="background:${VERM}"></i><span>Rota programada sem passagem de caminhão</span><b>${FT.length?nf(FT.reduce((a,l)=>a+compr(l),0),1)+' km':'—'}</b></div></div><div class="leg"><span>👆 Passe o mouse (ou toque) no rastreio para ver a hora em que o caminhão passou</span>${VV.length?'<span>🚛 Placa: velocidade nos últimos 10 min (verde coletando, cinza parado, laranja deslocamento)</span>':''}${(s.cpt||[]).length?`<span>${CPT.replace('class="cpt"','class="cpt" style="width:16px;height:16px"')} Compactação</span>`:''}${(s.uat||[]).length?'<span>⛰ Último ponto de coleta antes do aterro</span>':''}<span><i style="background:#e08a00;width:10px;height:10px;border-radius:50%"></i>Parada longa</span>${s.ini?'<span><i style="background:#1a8a4a;width:10px;height:10px;border-radius:50%"></i>Início da rota</span>':''}${vivo(s)?'<span><i style="background:#2a78d6;width:10px;height:10px;border-radius:50%"></i>Caminhão (toque para ir até ele)</span>':''}</div>${navBtns(s)}`;
  document.querySelectorAll('.lt button[data-l]').forEach(b=>b.onclick=()=>{const k=b.dataset.l,on=!b.classList.contains('on');b.classList.toggle('on',on);if(k==='r')VIS.r=on;on?GL[k].addTo(lay):lay.removeLayer(GL[k])});
- setTimeout(()=>{map.invalidateSize();const pts=((s.lin||[]).length?s.lin.flatMap(l=>l[1]):(s.ring||[]).flat()).concat(s.ini?[s.ini.slice(0,2)]:[],vivo(s)?[s.pos]:[]);if(!pts.length&&T.length)pts.push(...T[0][3]);if(!pts.length)return;const bb=L.latLngBounds(pts),bz=bb.pad(.5);T.forEach(g=>g[3].forEach(p=>{if(bz.contains(p))bb.extend(p)}));map.fitBounds(bb,{padding:[24,24]})},30)}
+ setTimeout(()=>{map.invalidateSize();const pts=((s.lin||[]).length?s.lin.flatMap(l=>l[1]):(s.ring||[]).flat()).concat(s.ini?[s.ini.slice(0,2)]:[],VV.length?VV.map(x=>[x[1],x[2]]):vivo(s)?[s.pos]:[]);if(!pts.length&&T.length)pts.push(...T[0][3]);if(!pts.length)return;const bb=L.latLngBounds(pts),bz=bb.pad(.5);T.forEach(g=>g[3].forEach(p=>{if(bz.contains(p))bb.extend(p)}));map.fitBounds(bb,{padding:[24,24]})},30)}
 function openTruck(v){const t=caminhoes(D.S.filter(s=>tno(s)===TURNO)).find(x=>x.v===v)||caminhoes(D.S).find(x=>x.v===v);if(!t)return;mapa();
  const ordS=[...new Set(t.seg.map(x=>x.s))],cor=()=>AZUL,pts=[];
  t.Ss.forEach(s=>{(s.ring||[]).forEach(r=>{const pg0=L.polygon(r,{color:'#555',weight:1.5,dashArray:'5 4',fillOpacity:.05}).addTo(lay);pg0.bindTooltip(esc(s.s),{permanent:true,direction:'center',className:'lbl'})});{const FT=faltam(s);if(FT.length)L.polyline(FT,{color:VERM,weight:5,opacity:.8}).bindTooltip(`Setor ${esc(s.s)} · falta coletar`,{sticky:true}).addTo(lay)}});
  t.seg.forEach(x=>{if(x.P.length<2)return;rastroHora(lay,x.P,x.tt,cor(x.s),`${esc(t.v)} · setor ${esc(x.s)}`);pts.push(...x.P)});
  const S1=t.seg.find(x=>x.P.length),S2=[...t.seg].reverse().find(x=>x.P.length);
  if(S1)L.marker(S1.P[0],{icon:icone('🏁'),zIndexOffset:500}).bindTooltip(`Início · ${S1.h1}`).addTo(lay);
- const vv=t.ex&&aoVivo()&&t.ex.pos?t.ex.pos:null;
+ t.Ss.forEach(s=>(s.uat||[]).filter(u=>nv(u[3])===t.v).forEach(u=>L.marker([u[0],u[1]],{icon:icone('⛰','uat',22),zIndexOffset:600}).bindTooltip(`Último ponto de coleta antes do aterro · ${u[2]} (setor ${esc(s.s)})<br>chegou ao aterro às ${u[4]}`).addTo(lay)));
+ t.Ss.forEach(s=>(s.cpt||[]).filter(c=>nv(c[4]||'')===t.v).forEach(c=>L.marker([c[0],c[1]],{icon:L.divIcon({className:'',html:CPT,iconSize:[26,26],iconAnchor:[13,13]}),zIndexOffset:400}).bindTooltip(`Compactação · ${c[2]}${c[3]?' · '+hm(c[3]):''}`).addTo(lay)));
+ const vx=aoVivo()?t.Ss.flatMap(s=>(s.vivo||[]).filter(x=>nv(x[0])===t.v&&(idade(x[3])??99)<=20)).sort((a,b)=>(idade(a[3])??99)-(idade(b[3])??99))[0]:null;
+ if(vx)marcaCaminhao(vx);
+ const vv=!vx&&t.ex&&aoVivo()&&t.ex.pos?t.ex.pos:null;
  if(vv)L.marker(vv,{icon:icone('🚛','truck',28),zIndexOffset:1000}).bindPopup(`<b>${esc(t.v)}</b><br>Posição das ${esc(t.ex.ult||'—')}<a class="nav" target="_blank" rel="noopener" href="${rotaAte(vv)}">🚛 Ir até o caminhão</a>`).addTo(lay);
  else if(S2)L.marker(S2.P[S2.P.length-1],{icon:icone('⛳'),zIndexOffset:500}).bindTooltip(`Último ponto · ${S2.h2}`).addTo(lay);
  document.getElementById('shT').textContent=`🚛 ${t.v} · ${t.media==null?'—':nf(t.media)+'%'} · ${nf(t.km,1)} km`;
@@ -395,7 +426,7 @@ async function abrir(pw){const e=await baixar(DIA?'hist/'+DIA+'.enc.json':'dados
 async function carregar(){const pw=localStorage.getItem('tc_pw');if(!pw){document.getElementById('lock').hidden=false;return}
  try{D=await abrir(pw);document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;render();if(!DIA){HOJE=D.dia;if(!Object.keys(IDX).length)indice();else botoes()}}
  catch(e){if(DIA||e.name!=='OperationError'){document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;document.getElementById('tit').textContent='Coleta '+CX.n;document.getElementById('sub').textContent='';document.getElementById('tabsT').innerHTML='';document.getElementById('tabsT').style.display='none';document.getElementById('placar').innerHTML='';document.getElementById('chips').innerHTML='';document.getElementById('podio').innerHTML='';document.getElementById('ord').innerHTML='';document.getElementById('list').innerHTML='<div class="note">'+(DIA?'Não há dados guardados desse dia.':'Os dados desta cidade ainda não estão disponíveis. Volte em alguns minutos.')+'</div>';return}localStorage.removeItem('tc_pw');document.getElementById('app').hidden=true;document.getElementById('lock').hidden=false;document.getElementById('err').textContent='Senha incorreta ou dados indisponíveis.'}}
-document.getElementById('relBtn').onclick=async()=>{const b=document.getElementById('relBtn');if(!D)return;if(!window.relatorio){b.disabled=true;try{await new Promise((ok,er)=>{const s=document.createElement('script');s.src='relatorio.js?v=7';s.onload=ok;s.onerror=er;document.head.appendChild(s)})}catch(e){b.disabled=false;return}b.disabled=false}window.relatorio(D,CX)};
+document.getElementById('relBtn').onclick=async()=>{const b=document.getElementById('relBtn');if(!D)return;if(!window.relatorio){b.disabled=true;try{await new Promise((ok,er)=>{const s=document.createElement('script');s.src='relatorio.js?v=8';s.onload=ok;s.onerror=er;document.head.appendChild(s)})}catch(e){b.disabled=false;return}b.disabled=false}window.relatorio(D,CX)};
 document.getElementById('go').onclick=()=>{try{localStorage.setItem('tc_pw',document.getElementById('pw').value)}catch(e){}carregar()};
 document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
 cidades();carregar();setInterval(()=>{if(!DIA)indice()},900000);setInterval(()=>{if(D&&!DIA&&!document.getElementById('sheet').classList.contains('open'))carregar()},120000);
