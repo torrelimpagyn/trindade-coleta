@@ -1087,6 +1087,11 @@ def montar(s, dia, cad, at):
                     o["par"].append([(p.get("DataHoraInicio") or "")[11:16], (p.get("DataHoraFim") or "")[11:16], d, round(pt[0], 5), round(pt[1], 5)])
                     o["stop"] += d
         so_velho = bool(n_velho and not n_ok)
+        ativ = (x.get("DisplayDataInicioAtividade") or "").strip()
+        if dia_x == dia and not n_ok and ((ativ and not ativ.startswith(ddmm)) or (not ativ and o["sit"] == "EXECUTADO" and not n_velho)):
+            # registro de outro dia que a INLOG ainda mostra na grade de hoje (de madrugada, antes de gerar a agenda do dia): não é rota de hoje
+            print("   ", cod, "registro de outro dia na grade de hoje (início", ativ or "—", "·", o["sit"], o["pct"], "%) → fora do painel de hoje")
+            continue
         if cpt:   # junta acionamentos seguidos (até 3 min e 40 m) num ciclo de compactação
             cpt.sort(key=lambda x: (x[3], x[0]))
             ciclos = []
