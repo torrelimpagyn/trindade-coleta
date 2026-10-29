@@ -418,13 +418,30 @@ def url_passagens(o, dia):
 
 
 INICIO_TURNO = {"MATUTINO": 7, "MANHA": 7, "DIURNO": 8, "INTEGRAL": 8, "VESPERTINO": 14, "TARDE": 14, "NOTURNO": 20}
-CAMPOS_GPS = ("sit", "fonte", "veic", "pgps", "entrada", "ini", "gps", "dist", "vel", "fim_gps", "pos", "ult")
+CAMPOS_GPS = ("sit", "fonte", "veic", "pgps", "entrada", "ini", "gps", "dist", "vel", "fim_gps", "pos", "ult", "vivo", "ritmo", "eta")
 GPSX = {}
 
 
-def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120):
+def ao_vivo(trv):
+    """Posição mais recente de cada caminhão e a velocidade média dos últimos 10 min (placa no mapa)."""
+    out = []
+    for v, pts_v in trv.items():
+        u_ = sorted(pts_v, key=lambda p: p[0])
+        if not u_:
+            continue
+        tl = u_[-1][0]
+        rec = [p for p in u_ if (tl - p[0]).total_seconds() <= 600]
+        h_ = (rec[-1][0] - rec[0][0]).total_seconds() / 3600
+        km_ = sum(dist_m(a[1], b[1]) for a, b in zip(rec, rec[1:])) / 1000
+        out.append([v, round(u_[-1][1][0], 5), round(u_[-1][1][1], 5), tl.strftime("%H:%M"), round(u_[-1][2] or 0), round(km_ / h_) if h_ >= .05 else None])
+    return out
+
+
+def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=False):
     """Setor sem controle na INLOG (aparece como AGUARDANDO 0%): procura no GPS os veículos que coletaram nele
-    (passagens perto do setor, devagar, dentro do polígono). Se achar, o setor vira "realizado pelo GPS"."""
+    (passagens perto do setor, devagar, dentro do polígono). Se achar, o setor vira "realizado pelo GPS".
+    Hoje: basta o caminhão estar coletando no setor agora (10 min ou mais, a maior parte dos pontos lentos dos
+    últimos 40 min dentro dele), mesmo que a INLOG mostre o setor zerado ou o caminhão num controle "INEXISTENTE"."""
     u = url_passagens(o, dia)   # centro e raio pela rota (o polígono pode ter partes longe)
     if not u:
         return
@@ -441,14 +458,24 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120):
             por_v.setdefault(v, {})[t] = ((h["Latitude"] / 1e6, h["Longitude"] / 1e6), h.get("Velocidade") or 0)
     no_setor = lambda q: any(dentro(q, r) for r in o["ring"]) if o["ring"] else True
     escolhidos = {}
+    agora = dt.datetime.now(TZ).replace(tzinfo=None)
     for v, d in por_v.items():
         tr = [(t, q, vel) for t, (q, vel) in sorted(d.items())]
         dentro_lento = [x for x in tr if x[2] <= 25 and no_setor(x[1])]
-        if len(dentro_lento) < min_pts:
+        if len(dentro_lento) < (10 if hoje else min_pts):
             continue
+        span = (dentro_lento[-1][0] - dentro_lento[0][0]).total_seconds()
         cob = cobertura(o["lin"], {v: tr})
-        print("   ", o["s"], "sem controle na INLOG · GPS de", v, ":", cob, "% da rota,", len(dentro_lento), "pontos coletando no setor")
-        if cob and cob >= min_cob:
+        ok = bool(cob and cob >= min_cob and len(dentro_lento) >= (30 if hoje else min_pts))
+        dom = None
+        if hoje and not ok and span >= 600:   # coletando no setor agora?
+            fim = tr[-1][0]
+            rec = [x for x in tr if x[2] <= 25 and (fim - x[0]).total_seconds() <= 2400]
+            dom = sum(1 for x in rec if no_setor(x[1])) / len(rec) if rec else 0
+            ok = bool(cob and cob >= (3 if o["ring"] else 10) and dom >= .5 and (agora - fim).total_seconds() <= 1800)
+        print("   ", o["s"], "sem controle na INLOG · GPS de", v, ":", cob, "% da rota,", len(dentro_lento), "pontos coletando no setor",
+              "· %d min" % (span // 60), "· agora %d%% no setor" % (dom * 100) if dom is not None else "", "→ entra" if ok else "→ não entra")
+        if ok:
             escolhidos[v] = (tr, dentro_lento)
     if not escolhidos:
         return
@@ -473,6 +500,14 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120):
         o["vel"] = round(km / ((t_fim - t_ini).total_seconds() / 3600), 1)
     o["fim_gps"] = t_fim.strftime("%H:%M")
     o["pos"], o["ult"] = [ult[1][0], ult[1][1]], ult[0].strftime("%d/%m %H:%M")
+    if hoje:
+        trv = {v: tr for v, (tr, _) in escolhidos.items()}
+        o["vivo"] = ao_vivo(trv)
+        if o["pgps"] is not None and o["pgps"] < 95:
+            try:
+                o.update(previsao(o["lin"], trv, o["pgps"]))
+            except Exception as e:
+                print("  previsão", o["s"], "falhou:", e)
 
 
 def dentro(pt, anel):
@@ -1223,14 +1258,14 @@ def montar(s, dia, cad, at):
         h = int(at[:2]) if hoje and at[:2].isdigit() else 99
         if hoje and h < INICIO_TURNO.get(norm(o.get("turno")), 8) and not (norm(o.get("turno")) == "NOTURNO" and h < 4):
             continue   # turno desse setor ainda não começou
-        if hoje and k in GPSX and time.time() - GPSX[k]["t"] < 1800:   # hoje: confere cada setor no máximo a cada 30 min
+        if hoje and k in GPSX and time.time() - GPSX[k]["t"] < 540:   # hoje: confere cada setor no máximo a cada 10 min
             o.update(GPSX[k]["o"])
             continue
         fila.append((o, dia_o, u, k))
     buscar_varios(s, [f[2] for f in fila], n=4)
     for o, dia_o, u, k in fila:
         try:
-            gps_sem_controle(s, dia_o, o, ocupado)
+            gps_sem_controle(s, dia_o, o, ocupado, hoje=hoje)
             if hoje:
                 GPSX[k] = {"t": time.time(), "o": {c: o[c] for c in CAMPOS_GPS if c in o} if o["sit"] == "GPS" else {}}
             if o["sit"] == "GPS":
