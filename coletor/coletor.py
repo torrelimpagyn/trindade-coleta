@@ -1262,19 +1262,24 @@ def montar(s, dia, cad, at):
     for o in setores:
         o.pop("_cv", None); o.pop("_tr", None)
     ocupado = {(v, t.replace(second=0)) for v, d in por_veic.items() for t in d}
-    hoje, fila = at != "final", []
+    hoje, fila, pulou = at != "final", [], []
     for o, dia_o in pend:
         u = url_passagens(o, dia_o)
         k = "%s|%s|%s" % (CID["slug"], dia_o, o["s"])
         if not u:
+            pulou.append(o["s"] + ":sem rota")
             continue
         h = int(at[:2]) if hoje and at[:2].isdigit() else 99
-        if hoje and h < INICIO_TURNO.get(norm(o.get("turno")), 8) - 2 and not (norm(o.get("turno")) == "NOTURNO" and h < 4):
-            continue   # turno desse setor ainda não começou (confere a partir de 2 h antes do início)
+        if hoje and h < INICIO_TURNO.get(norm(o.get("turno")), 8) - 4 and not (norm(o.get("turno")) == "NOTURNO" and h < 4):
+            pulou.append("%s:turno %s" % (o["s"], o.get("turno")))
+            continue   # turno desse setor ainda não começou (confere a partir de 4 h antes do início)
         if hoje and k in GPSX and time.time() - GPSX[k]["t"] < 540:   # hoje: confere cada setor no máximo a cada 10 min
             o.update(GPSX[k]["o"])
+            pulou.append(o["s"] + ":conferido há pouco")
             continue
         fila.append((o, dia_o, u, k))
+    if hoje and CID.get("slug") == "trindade":
+        print("    GPS dos setores sem controle: confere", [f[0]["s"] for f in fila], "· pulou", pulou)
     buscar_varios(s, [f[2] for f in fila], n=4)
     for o, dia_o, u, k in fila:
         try:
