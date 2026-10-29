@@ -437,7 +437,7 @@ def ao_vivo(trv):
     return out
 
 
-def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=False):
+def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=False, frota=None):
     """Setor sem controle na INLOG (aparece como AGUARDANDO 0%): procura no GPS os veículos que coletaram nele
     (passagens perto do setor, devagar, dentro do polígono). Se achar, o setor vira "realizado pelo GPS".
     Hoje: basta o caminhão estar coletando no setor agora (10 min ou mais, a maior parte dos pontos lentos dos
@@ -446,10 +446,13 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
     if not u:
         return
     resp = pegar_json(s, u) or []
-    por_v, n_ocup = {}, {}
+    por_v, n_ocup, outros = {}, {}, set()
     for blk in resp:
         for h in blk.get("Historico") or []:
             v = h.get("Identificador") or blk.get("IdentificadorVeiculo") or "?"
+            if frota and re.sub(r"[^0-9A-Z]", "", norm(v)) not in frota:
+                outros.add(v)
+                continue   # veículo que não é caminhão de coleta da cidade (carro de apoio, outra operação etc.)
             t = dt.datetime.fromisoformat(h["DataHora"][:19])
             if t.date().isoformat() != dia:
                 continue
@@ -463,7 +466,7 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
         res = sorted(((v, len(d), sum(1 for q, vel in d.values() if vel <= 25 and no_setor(q)), max(d).strftime("%H:%M"), n_ocup.get(v, 0))
                       for v, d in por_v.items()), key=lambda x: -x[2])[:5]
         print("   ", o["s"], "passagens hoje:", len(resp), "blocos ·", "polígono" if o["ring"] else "sem polígono", "·",
-              ", ".join("%s %d pts/%d lentos no setor/último %s/%d ocupados" % x for x in res) or "ninguém")
+              ", ".join("%s %d pts/%d lentos no setor/último %s/%d ocupados" % x for x in res) or "ninguém", "· fora da frota:", sorted(outros)[:8])
     agora = dt.datetime.now(TZ).replace(tzinfo=None)
     for v, d in por_v.items():
         tr = [(t, q, vel) for t, (q, vel) in sorted(d.items())]
@@ -1010,6 +1013,8 @@ def montar(s, dia, cad, at):
     ater0 = tuple(cad["aterro"]) if cad.get("aterro") else None
     grid = pegar_json(s, GRID.format(d=dia))
     linhas = [x for x in grid["Data"]["Data"] if da_cidade(x.get("MacroSetor"))]
+    idv = lambda v: re.sub(r"[^0-9A-Z]", "", norm(v))
+    frota = {idv(x.get(k)) for x in linhas for k in ("Veiculo", "Placa") if x.get(k)}   # caminhões da cidade (só eles entram pelo GPS)
     # A INLOG repete o mesmo setor em várias linhas (uma por viagem/veículo, ou uma "ATIVO" e outra "AGUARDANDO").
     # Fica uma linha por setor: a que tem coleta ativa; senão a executada; senão a aguardando.
     prio = {"ATIVO": 0, "EXECUTADO": 1, "AGUARDANDO": 2}
@@ -1031,6 +1036,8 @@ def montar(s, dia, cad, at):
     emprestado = {}
     try:
         for y in pegar_json(s, GRID.format(d=ontem))["Data"]["Data"]:
+            if da_cidade(y.get("MacroSetor")):
+                frota.update(idv(y.get(k)) for k in ("Veiculo", "Placa") if y.get(k))
             if da_cidade(y.get("MacroSetor")) and (y.get("DisplayDataInicioAtividade") or "").startswith(ddmm):
                 emprestado[codigo(y.get("Setor"))] = y
     except SystemExit:
@@ -1271,7 +1278,7 @@ def montar(s, dia, cad, at):
     buscar_varios(s, [f[2] for f in fila], n=4)
     for o, dia_o, u, k in fila:
         try:
-            gps_sem_controle(s, dia_o, o, ocupado, hoje=hoje)
+            gps_sem_controle(s, dia_o, o, ocupado, hoje=hoje, frota=frota | {idv(v) for v in por_veic})
             if hoje:
                 GPSX[k] = {"t": time.time(), "o": {c: o[c] for c in CAMPOS_GPS if c in o} if o["sit"] == "GPS" else {}}
             if o["sit"] == "GPS":
