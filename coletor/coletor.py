@@ -450,7 +450,9 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
     for blk in resp:
         for h in blk.get("Historico") or []:
             v = h.get("Identificador") or blk.get("IdentificadorVeiculo") or "?"
-            if frota and re.sub(r"[^0-9A-Z]", "", norm(v)) not in frota:
+            iv = re.sub(r"[^0-9A-Z]", "", norm(v))
+            pref = re.fullmatch(r"([A-Z]{2,3})\d{2,3}", iv)
+            if frota and iv not in frota and not (pref and pref.group(1) in {m.group(1) for m in (re.fullmatch(r"([A-Z]{2,3})\d{2,3}", f) for f in frota) if m}):
                 outros.add(v)
                 continue   # veículo que não é caminhão de coleta da cidade (carro de apoio, outra operação etc.)
             t = dt.datetime.fromisoformat(h["DataHora"][:19])
