@@ -57,7 +57,7 @@ header h1{font-size:17px;margin:0}
 .stp .dt{width:7px;height:7px;border-radius:50%;background:currentColor}.stp.ex .dt{animation:pisca 1.2s infinite}
 .apo{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;background:rgba(42,111,219,.14);color:var(--exT);width:max-content}.apo::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;animation:pisca 1.2s infinite}
 .eta{margin:-4px 12px 10px;font-size:11.5px;color:var(--mut)}.eta b{color:var(--ink)}.eta.late{color:var(--baT);font-weight:700}.eta.late b{color:inherit}.eta.late .al{animation:pisca 1.2s infinite}
-.tk{position:relative;width:28px;height:28px}.tk .pl{position:absolute;bottom:33px;left:50%;transform:translateX(-50%);white-space:nowrap;font:700 10.5px/1.1 system-ui,sans-serif;padding:3px 6px;border-radius:6px;background:rgba(20,35,28,.88);color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}.tk .pl.co{background:#1a8a4a}.tk .pl.pr{background:#6b6f6d}.tk .pl.de{background:#c46a00}
+.tkm{position:relative;width:28px;height:28px}.tkm .pl{position:absolute;bottom:33px;left:50%;transform:translateX(-50%);white-space:nowrap;font:700 10.5px/1.1 system-ui,sans-serif;padding:3px 6px;border-radius:6px;background:rgba(20,35,28,.88);color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}.tkm .pl.co{background:#1a8a4a}.tkm .pl.pr{background:#6b6f6d}.tkm .pl.de{background:#c46a00}
 .uat{background:#7a5a2e;border:2px solid #fff;border-radius:50%;width:22px;height:22px;box-shadow:0 1px 5px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:11px}
 .cpt{width:26px;height:26px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45))}
 @keyframes pisca{50%{opacity:.25}}
@@ -341,7 +341,7 @@ function mapa(){document.getElementById('sheet').classList.add('open');if(ANIM){
 const icone=(h,c='ini',z=24)=>L.divIcon({className:'',html:`<div class="${c}">${h}</div>`,iconSize:[z,z],iconAnchor:[z/2,z/2]});
 function marcaCaminhao(x){   // caminhão na posição mais recente do GPS, com placa da velocidade (média dos últimos 10 min)
  const vel=x[5]!=null?x[5]:x[4],cl=vel<=1?'pr':vel<=25?'co':vel<=40?'':'de';
- L.marker([x[1],x[2]],{icon:L.divIcon({className:'',html:`<div class="tk"><span class="pl ${cl}">${esc(nv(x[0]))} · ${vel} km/h</span><div class="truck">🚛</div></div>`,iconSize:[28,28],iconAnchor:[14,14]}),zIndexOffset:1000})
+ L.marker([x[1],x[2]],{icon:L.divIcon({className:'',html:`<div class="tkm"><span class="pl ${cl}">${esc(nv(x[0]))} · ${vel} km/h</span><div class="truck">🚛</div></div>`,iconSize:[28,28],iconAnchor:[14,14]}),zIndexOffset:1000})
   .bindPopup(`<b>${esc(nv(x[0]))}</b><br>Posição das ${x[3]} · ${x[4]} km/h no último ponto · média dos últimos 10 min: ${x[5]!=null?x[5]+' km/h':'—'}<a class="nav" target="_blank" rel="noopener" href="${rotaAte([x[1],x[2]])}">🚛 Ir até o caminhão</a>`).addTo(lay)}
 const CPT='<svg class="cpt" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#fff"/><circle cx="16" cy="16" r="13.5" fill="#5b3fa8"/><rect x="6" y="12" width="13" height="9" rx="1.5" fill="#fff"/><path d="M19 21 L19 12 L25 9 L25 12 L21.5 13.5 L21.5 21 Z" fill="#ffd84d"/><path d="M19 12 L26 7.5" stroke="#ffd84d" stroke-width="2" stroke-linecap="round"/><circle cx="9.5" cy="22.5" r="2.3" fill="#222" stroke="#fff" stroke-width="1"/><circle cx="17" cy="22.5" r="2.3" fill="#222" stroke="#fff" stroke-width="1"/></svg>';   // compactador aberto
 function openMap(c){const s=D.S.find(x=>x.s===c);mapa();
