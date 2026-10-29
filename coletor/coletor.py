@@ -446,7 +446,7 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
     if not u:
         return
     resp = pegar_json(s, u) or []
-    por_v = {}
+    por_v, n_ocup = {}, {}
     for blk in resp:
         for h in blk.get("Historico") or []:
             v = h.get("Identificador") or blk.get("IdentificadorVeiculo") or "?"
@@ -454,10 +454,16 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
             if t.date().isoformat() != dia:
                 continue
             if ocupado and (v, t.replace(second=0)) in ocupado:
+                n_ocup[v] = n_ocup.get(v, 0) + 1
                 continue   # nesse minuto o caminhão já estava num controle de outro setor da INLOG
             por_v.setdefault(v, {})[t] = ((h["Latitude"] / 1e6, h["Longitude"] / 1e6), h.get("Velocidade") or 0)
     no_setor = lambda q: any(dentro(q, r) for r in o["ring"]) if o["ring"] else True
     escolhidos = {}
+    if hoje and CID.get("slug") == "trindade":   # diagnóstico: quem passou pelo setor hoje
+        res = sorted(((v, len(d), sum(1 for q, vel in d.values() if vel <= 25 and no_setor(q)), max(d).strftime("%H:%M"), n_ocup.get(v, 0))
+                      for v, d in por_v.items()), key=lambda x: -x[2])[:5]
+        print("   ", o["s"], "passagens hoje:", len(resp), "blocos ·", "polígono" if o["ring"] else "sem polígono", "·",
+              ", ".join("%s %d pts/%d lentos no setor/último %s/%d ocupados" % x for x in res) or "ninguém")
     agora = dt.datetime.now(TZ).replace(tzinfo=None)
     for v, d in por_v.items():
         tr = [(t, q, vel) for t, (q, vel) in sorted(d.items())]
@@ -1256,8 +1262,8 @@ def montar(s, dia, cad, at):
         if not u:
             continue
         h = int(at[:2]) if hoje and at[:2].isdigit() else 99
-        if hoje and h < INICIO_TURNO.get(norm(o.get("turno")), 8) and not (norm(o.get("turno")) == "NOTURNO" and h < 4):
-            continue   # turno desse setor ainda não começou
+        if hoje and h < INICIO_TURNO.get(norm(o.get("turno")), 8) - 2 and not (norm(o.get("turno")) == "NOTURNO" and h < 4):
+            continue   # turno desse setor ainda não começou (confere a partir de 2 h antes do início)
         if hoje and k in GPSX and time.time() - GPSX[k]["t"] < 540:   # hoje: confere cada setor no máximo a cada 10 min
             o.update(GPSX[k]["o"])
             continue
