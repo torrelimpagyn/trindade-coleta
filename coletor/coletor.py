@@ -1025,6 +1025,7 @@ def montar(s, dia, cad, at):
         pontos, t0, t1, trilhas, km_pt, trv = [], None, None, {}, {}, {}
         n_ok = n_velho = n_ontem = 0
         cpt = []   # acionamentos do compactador (sensor)
+        sens = [0, 0, 0]   # pontos com compactador, com porta aberta, com os dois
         fontes = [(f, d) for f, d in ((x, dia_x), (extra, ontem)) if f and f.get("Controle") and f.get("CodigoSetor")]
         for fx, fd in fontes:
             for c in pegar_json(s, ROTA.format(c=fx["CodigoSetor"], d=fd)) or []:
@@ -1062,8 +1063,10 @@ def montar(s, dia, cad, at):
                 if ent and (o.get("_ent") is None or ent < o["_ent"]):
                     o["_ent"], o["entrada"] = ent, ent[11:16]
                 H = c.get("RastreamentoHistorico") or []
-                for h in H:   # sensor do compactador (INLOG: AcionamentoCompactador / AbriuPorta)
-                    if (h.get("InfoWindow") or {}).get("AcionamentoCompactador") is True or h.get("AbriuPorta") == "T":
+                for h in H:   # sensor do compactador (INLOG: InfoWindow.AcionamentoCompactador)
+                    ac, pa = (h.get("InfoWindow") or {}).get("AcionamentoCompactador") is True, h.get("AbriuPorta") == "T"
+                    sens[0] += ac; sens[1] += pa; sens[2] += ac and pa
+                    if ac:
                         cpt.append((dt.datetime.fromisoformat(h["DataHoraCompleta"][:19]), (h["Posicao"]["Latitude"], h["Posicao"]["Longitude"]), seg(h.get("TempoParado")), v or "?"))
                 tr = trilhas.setdefault(v or "?", [])
                 for h in H:
@@ -1102,6 +1105,9 @@ def montar(s, dia, cad, at):
                 else:
                     ciclos.append([p_[0], p_[1], t_.strftime("%H:%M"), d_, v_, t_, p_])
             o["cpt"] = [[round(c_[0], 5), round(c_[1], 5), c_[2], c_[3], c_[4]] for c_ in sorted(ciclos, key=lambda c_: c_[5])]
+            if CID.get("slug") == "trindade" and at != "final":
+                print("   ", cod, "sensor INLOG: %d pontos com compactador, %d com porta aberta (%d com os dois) ·" % tuple(sens), len(o["cpt"]), "ciclos:",
+                      ", ".join("%s %s %ds" % (c_[4], c_[2], c_[3]) for c_ in o["cpt"]))
         if n_ontem:   # coleta de hoje que a INLOG lançou na agenda de ontem (a tela de hoje da INLOG não mostra essa coleta)
             o["agd"], o["pdia"] = ontem, pdia
             if extra:
