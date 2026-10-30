@@ -3,6 +3,8 @@
 Variáveis de ambiente (cadastradas em Settings > Secrets and variables > Actions):
   INLOG_USUARIO, INLOG_SENHA  -> login da INLOG
   SENHA_SITE                  -> senha que as pessoas digitam para abrir o site
+  SENHA_SITE_ANTIGA (opcional) -> só na troca da senha do site: regrava o histórico com a senha nova (apague depois)
+  LOG_DETALHADO (variável, opcional) = 1 -> log com detalhes de setores e caminhões (o log do GitHub é público)
 """
 import base64, datetime as dt, gzip, json, math, os, re, sys, time, unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -49,6 +51,19 @@ RAIO_ACESSO_GERAL = 2500   # sem via de acesso desenhada: considera o GPS até 2
 CIDADES = json.load(open(os.path.join(AQUI, "cidades.json"), encoding="utf-8"))
 CACHE = os.path.join(AQUI, "cache")
 _RESP, _T0, CID = {}, time.time(), {}
+ITERACOES = 600000      # PBKDF2 da senha do site: quanto maior, mais caro para quem tenta adivinhar a senha (o site lê o número de cada arquivo)
+_SAL, _CHAVES = os.urandom(16), {}   # um sal por execução: o celular deriva a chave uma vez para todos os arquivos desta rodada
+
+# Os logs do GitHub Actions de repositório público ficam abertos para qualquer pessoa: por padrão o coletor só
+# escreve erros e o resumo. Detalhes de setores e caminhões só com a variável LOG_DETALHADO=1 (use por pouco tempo).
+LOG_DETALHADO = os.environ.get("LOG_DETALHADO", "").strip() == "1"
+_print = print
+
+
+def print(*a, **k):
+    txt = " ".join(str(x) for x in a)
+    if LOG_DETALHADO or txt.startswith(("ERRO", "tempo total", "senha nova")) or "falh" in txt:
+        _print(*a, **k)
 
 
 def norm(txt):
@@ -468,7 +483,7 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
         res = sorted(((v, len(d), sum(1 for q, vel in d.values() if vel <= 25 and no_setor(q)), max(d).strftime("%H:%M"), n_ocup.get(v, 0))
                       for v, d in por_v.items()), key=lambda x: -x[2])[:5]
         print("   ", o["s"], "passagens hoje:", len(resp), "blocos ·", "polígono" if o["ring"] else "sem polígono", "·",
-              ", ".join("%s %d pts/%d lentos no setor/último %s/%d ocupados" % x for x in res) or "ninguém", "· fora da frota:", sorted(outros)[:8])
+              ", ".join("%s %d pts/%d lentos no setor/último %s/%d ocupados" % x for x in res) or "ninguém", "· fora da frota:", len(outros), "veículos")
     agora = dt.datetime.now(TZ).replace(tzinfo=None)
     for v, d in por_v.items():
         tr = [(t, q, vel) for t, (q, vel) in sorted(d.items())]
@@ -617,10 +632,7 @@ def estado_anterior():
     try:
         repo = os.environ.get("GITHUB_REPOSITORY", "torrelimpagyn/trindade-coleta")
         e = requests.get(RAW_DADOS.format(repo=repo) + "?t=%d" % dt.datetime.now().timestamp(), timeout=30).json()
-        b = lambda v: base64.b64decode(v)
-        chave = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=b(e["sal"]), iterations=200000).derive(os.environ["SENHA_SITE"].encode())
-        raw = AESGCM(chave).decrypt(b(e["iv"]), b(e["dados"]), None)
-        return json.loads(gzip.decompress(raw) if e.get("z") else raw).get("ruas")
+        return json.loads(decifrar(e, [os.environ["SENHA_SITE"], os.environ.get("SENHA_SITE_ANTIGA")])[0]).get("ruas")
     except Exception as ex:
         print("sem histórico anterior das ruas:", ex)
         return None
@@ -1399,6 +1411,10 @@ def main():
             print("cidade", CID["nome"], "falhou:", e)
     os.makedirs(CACHE, exist_ok=True)
     json.dump(GPSX, open(arq_gps, "w"))
+    try:
+        recriptografar(ORCAMENTO)
+    except Exception as e:
+        print("troca de senha do histórico falhou:", e)
     # 2) dias anteriores: fecha o de ontem e completa o histórico aos poucos, em rodízio, enquanto houver tempo
     feitos = {slug: 0 for slug in CIDADES}
     andou = True
@@ -1427,6 +1443,69 @@ def main():
     print("tempo total: %.0f s" % (time.time() - _T0))
 
 
+def chave_de(senha, sal, it):
+    """Chave AES da senha do site (PBKDF2-SHA256), guardada para não derivar de novo na mesma execução."""
+    k = (senha, sal, it)
+    if k not in _CHAVES:
+        _CHAVES[k] = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=sal, iterations=it).derive(senha.encode())
+    return _CHAVES[k]
+
+
+def decifrar(e, senhas):
+    """Abre um .enc.json com a primeira senha que servir: devolve (conteúdo, posição da senha na lista)."""
+    b = lambda v: base64.b64decode(v)
+    it = min(max(int(e.get("it") or 200000), 100000), 5000000)
+    for i, s in enumerate(senhas):
+        if not s:
+            continue
+        try:
+            raw = AESGCM(chave_de(s, b(e["sal"]), it)).decrypt(b(e["iv"]), b(e["dados"]), None)
+        except Exception:   # senha não confere
+            continue
+        return (gzip.decompress(raw) if e.get("z") else raw), i
+    raise ValueError("nenhuma senha abre o arquivo")
+
+
+def recriptografar(limite):
+    """Troca da senha do site: com o secret SENHA_SITE_ANTIGA cadastrado, regrava com a senha nova os dias do histórico
+    publicados com a senha antiga (aos poucos, no tempo que sobra de cada execução). Quando o log mostrar
+    "faltam 0" e "0 falhas", apague o secret SENHA_SITE_ANTIGA."""
+    nova, antiga = os.environ.get("SENHA_SITE"), os.environ.get("SENHA_SITE_ANTIGA")
+    if not nova or not antiga or antiga == nova:
+        return
+    arq = os.path.join(CACHE, "recripto.json")
+    try:
+        feitos = set(json.load(open(arq)))
+    except Exception:
+        feitos = set()
+    repo = os.environ.get("GITHUB_REPOSITORY", "torrelimpagyn/trindade-coleta")
+    n = {"r": 0, "ok": 0, "f": 0, "faltam": 0}
+    for slug in CIDADES:
+        usar_cidade(slug)
+        base = RAW_HIST.format(repo=repo).rsplit("/", 1)[0] + "/"
+        for d, v in sorted(indice_hist()["dias"].items(), reverse=True):
+            if situacao(v) not in ("final", "parcial") or slug + "/" + d in feitos:
+                continue
+            if time.time() - _T0 >= limite:
+                n["faltam"] += 1
+                continue
+            local = os.path.join(HIST, d + ".enc.json")
+            try:
+                e = json.load(open(local)) if os.path.exists(local) else requests.get(base + d + ".enc.json?t=%d" % time.time(), timeout=30).json()
+                raw, i = decifrar(e, [nova, antiga])
+                if i:
+                    criptografar(raw, local, True)
+                    n["r"] += 1
+                else:
+                    n["ok"] += 1
+                feitos.add(slug + "/" + d)
+            except Exception:
+                n["f"] += 1
+    os.makedirs(CACHE, exist_ok=True)
+    json.dump(sorted(feitos), open(arq, "w"))
+    print("senha nova do site: %(r)d dias do histórico regravados nesta rodada, %(ok)d já estavam com a senha nova, %(f)d falhas, faltam %(faltam)d" % n)
+
+
 def criptografar(raw, destino=None, comprimir=False):
     destino = destino or SAIDA
     senha = os.environ.get("SENHA_SITE")
@@ -1434,12 +1513,11 @@ def criptografar(raw, destino=None, comprimir=False):
         falha("cadastre o secret SENHA_SITE")
     if comprimir:
         raw = gzip.compress(raw, 9)
-    sal, iv = os.urandom(16), os.urandom(12)
-    chave = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=sal, iterations=200000).derive(senha.encode())
-    ct = AESGCM(chave).encrypt(iv, raw, None)
+    iv = os.urandom(12)
+    ct = AESGCM(chave_de(senha, _SAL, ITERACOES)).encrypt(iv, raw, None)
     b = lambda v: base64.b64encode(v).decode()
     os.makedirs(os.path.dirname(destino), exist_ok=True)
-    e = {"v": 1, "sal": b(sal), "iv": b(iv), "dados": b(ct)}
+    e = {"v": 1, "it": ITERACOES, "sal": b(_SAL), "iv": b(iv), "dados": b(ct)}
     if comprimir:
         e["z"] = 1
     json.dump(e, open(destino, "w"))
