@@ -9,10 +9,11 @@ on:
     - cron: "*/15 0-3 * * *"    # 21h00 às 00h45 (Brasília)
   workflow_dispatch:
 
+# Ações de terceiros fixadas pelo commit (SHA): uma tag alterada por invasor não entra aqui. Permissões só as necessárias.
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: write   # grava os dados criptografados no ramo "dados"
+  pages: write      # publica o site
+  id-token: write   # exigido pela publicação do GitHub Pages
 
 concurrency:
   group: coleta
@@ -28,6 +29,8 @@ jobs:
       INLOG_USUARIO: ${{ secrets.INLOG_USUARIO }}
       INLOG_SENHA: ${{ secrets.INLOG_SENHA }}
       SENHA_SITE: ${{ secrets.SENHA_SITE }}
+      SENHA_SITE_ANTIGA: ${{ secrets.SENHA_SITE_ANTIGA }}   # só durante a troca da senha do site (apague depois)
+      LOG_DETALHADO: ${{ vars.LOG_DETALHADO }}             # 1 = log com detalhes (o log é público: use por pouco tempo)
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Fora do horário de coleta?
@@ -35,9 +38,9 @@ jobs:
         run: |
           h=$(TZ=America/Sao_Paulo date +%H%M)
           if [ "$h" -ge 0200 ] && [ "$h" -lt 0350 ]; then echo "fora=1" >> "$GITHUB_OUTPUT"; echo "Fora do horário ($h)"; fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: steps.hora.outputs.fora != '1'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         if: steps.hora.outputs.fora != '1'
         with:
           python-version: "3.12"
@@ -46,13 +49,13 @@ jobs:
       - name: Primeira coleta
         if: steps.hora.outputs.fora != '1'
         run: python coletor/coletor.py || echo "primeira coleta falhou" 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
         if: steps.hora.outputs.fora != '1'
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         if: steps.hora.outputs.fora != '1'
         with:
           path: docs
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
         if: steps.hora.outputs.fora != '1'
       - name: Coletar dados da INLOG (a cada 5 min)
         if: steps.hora.outputs.fora != '1'
