@@ -554,7 +554,7 @@
 @media print{@page{size:A4;margin:0}html,body{background:#fff!important}body>*:not(#rel){display:none!important}#rel{position:static;background:none;overflow:visible}#rel .bar2,#rel .msg{display:none}#rel .esc{padding:0;zoom:1!important}#rel .pgs{gap:0;display:block}.folha{box-shadow:none;break-after:page;page-break-after:always}.folha:last-child{break-after:auto;page-break-after:auto}}`;
 
   let lib = null;
-  const carregaLib = () => lib || (lib = new Promise((ok, er) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js'; s.onload = () => ok(window.htmlToImage); s.onerror = er; document.head.appendChild(s); }));
+  const carregaLib = () => lib || (lib = new Promise((ok, er) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js'; s.integrity = 'sha384-UbfRVKN3/elS1r7JcK2FhmPP+KlJ4CvYwbyYD7tH+uTkbT9bNJr9eJeQ0FoFbAgz'; s.crossOrigin = 'anonymous'; s.onload = () => ok(window.htmlToImage); s.onerror = er; document.head.appendChild(s); }));
   async function imagem() {
     const h = await carregaLib(), es = document.querySelector('#rel .esc'), el = document.querySelector('#rel .pgs'), z = es.style.zoom;
     es.style.zoom = '1';
