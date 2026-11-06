@@ -361,9 +361,10 @@ def diag_cobertura(lin, trv, vel_max=VEL_COLETA):
         pc[0], vel_max, RAIO_GPS, *pc[1:], tot / 1000, RAIO_GPS, *faixa)
 
 
-def coletou_no_setor(c, aneis, minimo=20):
+def coletou_no_setor(c, aneis, minimo=20, gar=None):
     """O caminhão do controle andou em velocidade de coleta dentro do setor (polígono ou até 30 m da borda)?
-    Controle aberto no setor errado (ex.: motorista escolheu outro setor na INLOG) não tem esses pontos."""
+    Controle aberto no setor errado (ex.: motorista escolheu outro setor na INLOG) não tem esses pontos.
+    Pontos no raio da garagem não contam (a garagem fica colada no setor 3005)."""
     aneis = [list(r) + [r[0]] for r in aneis or [] if len(r) > 2]
     if not aneis:
         return True
@@ -374,7 +375,7 @@ def coletou_no_setor(c, aneis, minimo=20):
         if (h.get("Velocidade") or 0) > 25 or not h.get("Posicao"):
             continue
         p = (h["Posicao"]["Latitude"], h["Posicao"]["Longitude"])
-        if not (cx[0] <= p[0] <= cx[1] and cx[2] <= p[1] <= cx[3]):
+        if not (cx[0] <= p[0] <= cx[1] and cx[2] <= p[1] <= cx[3]) or (gar and dist_m(p, gar) <= RAIO_GARAGEM):
             continue
         if any(dentro(p, r) for r in aneis) or any(dist_linha(p, r) <= 30 for r in aneis):
             n += 1
@@ -452,7 +453,7 @@ def ao_vivo(trv):
     return out
 
 
-def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=False, frota=None):
+def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=False, frota=None, gar=None):
     """Setor sem controle na INLOG (aparece como AGUARDANDO 0%): procura no GPS os veículos que coletaram nele
     (passagens perto do setor, devagar, dentro do polígono). Se achar, o setor vira "realizado pelo GPS".
     Hoje: basta o caminhão estar coletando no setor agora (10 min ou mais, a maior parte dos pontos lentos dos
@@ -477,7 +478,8 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
                 n_ocup[v] = n_ocup.get(v, 0) + 1
                 continue   # nesse minuto o caminhão já estava num controle de outro setor da INLOG
             por_v.setdefault(v, {})[t] = ((h["Latitude"] / 1e6, h["Longitude"] / 1e6), h.get("Velocidade") or 0)
-    no_setor = lambda q: any(dentro(q, r) for r in o["ring"]) if o["ring"] else True
+    # ponto no raio da garagem nunca é coleta no setor: caminhão estacionado na garagem (colada no setor 3005) não é apoio
+    no_setor = lambda q: not (gar and dist_m(q, gar) <= RAIO_GARAGEM) and (any(dentro(q, r) for r in o["ring"]) if o["ring"] else True)
     escolhidos = {}
     if hoje and CID.get("slug") == "trindade":   # diagnóstico: quem passou pelo setor hoje
         res = sorted(((v, len(d), sum(1 for q, vel in d.values() if vel <= 25 and no_setor(q)), max(d).strftime("%H:%M"), n_ocup.get(v, 0))
@@ -1001,8 +1003,8 @@ def estado_gps(o, trilhas, gar, ater):
     caixa = (min(la) - .0015, max(la) + .0015, min(lo) - .0015, max(lo) + .0015)
 
     def no_setor(p):
-        if not (caixa[0] <= p[0] <= caixa[1] and caixa[2] <= p[1] <= caixa[3]):
-            return False
+        if not (caixa[0] <= p[0] <= caixa[1] and caixa[2] <= p[1] <= caixa[3]) or (gar and dist_m(p, gar) <= RAIO_GARAGEM):
+            return False   # fora da área do setor, ou parado na garagem (que fica colada no setor 3005)
         return any(dentro(p, r) for r in aneis) or any(dist_linha(p, r) <= 100 for r in aneis)
     i = len(pts) - 1
     while i >= 0 and not no_setor(pts[i][1]):
@@ -1102,11 +1104,11 @@ def montar(s, dia, cad, at):
                         print("   ", cod, "controle de", vc, "das", ic.strftime("%H:%M"), "na agenda de ontem fora do turno", x.get("Turno"), "→ não entra")
                         n_velho += 1
                         continue
-                    if not coletou_no_setor(c, o["ring"]):
+                    if not coletou_no_setor(c, o["ring"], gar=gar):
                         print("   ", cod, "controle de", vc, "na agenda de ontem sem coleta no setor pelo GPS → não entra")
                         n_velho += 1
                         continue
-                elif c.get("DataHoraFinalizacao") and not coletou_no_setor(c, o["ring"]):
+                elif c.get("DataHoraFinalizacao") and not coletou_no_setor(c, o["ring"], gar=gar):
                     print("   ", cod, "controle de", vc, "fechado sem coleta no setor pelo GPS (setor errado na INLOG?) → não entra")
                     n_velho += 1
                     continue
@@ -1190,6 +1192,11 @@ def montar(s, dia, cad, at):
         o["gps"] = []
         for v, tr in trilhas.items():
             u = sorted(dict(tr).items())
+            if gar:   # tira o tempo parado na garagem antes de sair e depois de voltar (não é tempo no setor)
+                while u and dist_m(u[0][1], gar) <= RAIO_GARAGEM:
+                    u.pop(0)
+                while u and dist_m(u[-1][1], gar) <= RAIO_GARAGEM:
+                    u.pop()
             if len(u) > 1:
                 o["gps"].append([v, u[0][0].strftime("%H:%M"), u[-1][0].strftime("%H:%M"), *rastro_com_hora(u, dia)])
         o["_tr"] = {v: (min(t for t, _ in tr), max(t for t, _ in tr)) for v, tr in trilhas.items() if tr}
@@ -1297,7 +1304,7 @@ def montar(s, dia, cad, at):
     buscar_varios(s, [f[2] for f in fila], n=4)
     for o, dia_o, u, k in fila:
         try:
-            gps_sem_controle(s, dia_o, o, ocupado, hoje=hoje, frota=frota | {idv(v) for v in por_veic})
+            gps_sem_controle(s, dia_o, o, ocupado, hoje=hoje, frota=frota | {idv(v) for v in por_veic}, gar=gar)
             if hoje:
                 GPSX[k] = {"t": time.time(), "o": {c: o[c] for c in CAMPOS_GPS if c in o} if o["sit"] == "GPS" else {}}
             if o["sit"] == "GPS":
