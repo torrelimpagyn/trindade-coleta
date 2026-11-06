@@ -182,11 +182,12 @@ function outraRota(s){const M=segVeic();let algum=false;for(const g of s.gps||[]
  if(!L.some(x=>x.s!==s.s&&x.a>a0+5&&(idade(hora(x.b))??99)<=30))return false;algum=true}return algum}   // todos os caminhões do setor começaram outra rota depois desta e estão nela agora
 function dentroAnel(p,r){let ok=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const [y1,x1]=r[i],[y2,x2]=r[j];if((y1>p[0])!==(y2>p[0])&&p[1]<(x2-x1)*(p[0]-y1)/(y2-y1)+x1)ok=!ok}return ok}
 function pertoAnel(p,r,m){const C=Math.cos(p[0]*Math.PI/180);for(let i=0;i<r.length;i++){const a=r[i],b=r[(i+1)%r.length],bx=(b[1]-a[1])*111320*C,by=(b[0]-a[0])*110574,px=(p[1]-a[1])*111320*C,py=(p[0]-a[0])*110574,L2=bx*bx+by*by,t=L2?Math.max(0,Math.min(1,(px*bx+py*by)/L2)):0;if(Math.hypot(px-t*bx,py-t*by)<=m)return true}return false}
+function naGar(p){const g=D&&D.garagem;if(!g||!p)return false;return Math.hypot((p[0]-g[0])*110574,(p[1]-g[1])*111320*Math.cos(g[0]*Math.PI/180))<=300}   // caminhão no raio da garagem (300 m) não está no setor: a garagem fica colada no 3005
 function rastro(s){   // pelo rastreio: 'ex' no setor | 'ainda' indo para o setor | 'saiu' | 'nunca' (não entrou) | null (sem dados)
- if(s.zf===undefined&&s.uset===undefined){if(!s.pos||!(s.ring||[]).length)return null;const d=idade(s.ult);if(d!=null&&d>30)return 'saiu';return s.ring.some(r=>dentroAnel(s.pos,r)||pertoAnel(s.pos,r,150))?'ex':'saiu'}
+ if(s.zf===undefined&&s.uset===undefined){if(!s.pos||!(s.ring||[]).length)return null;const d=idade(s.ult);if(d!=null&&d>30)return 'saiu';return !naGar(s.pos)&&s.ring.some(r=>dentroAnel(s.pos,r)||pertoAnel(s.pos,r,150))?'ex':'saiu'}
  const du=s.uset!=null?idade(s.uset):null;
  if(s.zf==='setor'&&du!=null&&du<=15)return 'ex';
- if(s.pos&&(idade(s.ult)??99)<=15&&(s.ring||[]).some(r=>dentroAnel(s.pos,r)||pertoAnel(s.pos,r,150)))return 'ex';   // posição atual (GPS) de um caminhão do setor está dentro dele
+ if(s.pos&&!naGar(s.pos)&&(idade(s.ult)??99)<=15&&(s.ring||[]).some(r=>dentroAnel(s.pos,r)||pertoAnel(s.pos,r,150)))return 'ex';   // posição atual (GPS) de um caminhão do setor está dentro dele
  if(s.zf==='garagem'||s.volta)return s.uset==null?'nunca':'saiu';
  if(outraRota(s))return s.uset==null?'nunca':'saiu';
  if(du!=null&&du<=30)return 'ex';
@@ -443,7 +444,7 @@ document.getElementById('go').onclick=()=>{const i=document.getElementById('pw')
  try{if(document.getElementById('lembra').checked){localStorage.setItem('tc_pw',v);localStorage.setItem('tc_pw_exp',Date.now()+PWD)}else sessionStorage.setItem('tc_pw',v)}catch(e){}carregar()};
 document.getElementById('sair').onclick=()=>{esquecer();location.reload()};
 document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
-const VERSAO='2026-10-30.1';   // ao publicar mudança no site, troque este número: as telas abertas se atualizam sozinhas
+const VERSAO='2026-11-06.1';   // ao publicar mudança no site, troque este número: as telas abertas se atualizam sozinhas
 setInterval(async()=>{if(DIA||document.getElementById('rel')||document.getElementById('sheet').classList.contains('open'))return;
  try{const t=await(await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'})).text(),m=t.match(/const VERSAO='([^']+)'/);if(m&&m[1]!==VERSAO)location.reload()}catch(e){}},600000);
 cidades();carregar();setInterval(()=>{if(!DIA)indice()},900000);setInterval(()=>{if(D&&!DIA&&!document.getElementById('sheet').classList.contains('open'))carregar()},120000);
