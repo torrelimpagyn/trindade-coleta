@@ -43,7 +43,8 @@ ACESSO_ATERRO = [  # via de acesso ao aterro (OpenStreetMap): Av. dos Angicos + 
 RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
 JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
-VERSAO_HIST = 8         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+VERSAO_HIST = 9         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+REFAZ_DIAS = {8: 7}     # versão antiga -> só os últimos N dias são refeitos (9: saída da garagem corrigida)
 
 
 ORCAMENTO = 200        # segundos por execução (o laço roda a cada 5 min); o histórico antigo só usa o que sobrar
@@ -845,9 +846,13 @@ def garagem(trilha, gar):
         return None, None, None
     dentro_g = [dist_m(p, gar) <= RAIO_GARAGEM for _, p in trilha]
     saida = volta = None
-    for i in range(1, len(trilha)):
-        if dentro_g[i - 1] and not dentro_g[i]:
-            saida = trilha[i][0]; break
+    if dentro_g[0]:   # só quando o rastreio começa na garagem: a primeira saída é a saída do turno
+        for i in range(1, len(trilha)):
+            if not dentro_g[i]:
+                saida = trilha[i][0]; break
+    # Rastreio que já começa fora da garagem: a saída foi antes dele (vem do histórico completo do caminhão). Uma ida
+    # à garagem no meio do turno (almoço, troca de caminhão) não é a saída: antes ela virava "saída às 13:55" com
+    # entrada no setor às 11:18.
     if dentro_g[-1] and not all(dentro_g):
         i = len(trilha) - 1
         while i > 0 and dentro_g[i - 1]:
@@ -1400,8 +1405,18 @@ def montar(s, dia, cad, at):
         garagem_hist(s, setores, gar, dia, at)   # saída e retorno à garagem pelo GPS completo do caminhão
     except (SystemExit, Exception) as e:
         print("  garagem pelo histórico do veículo falhou:", e)
+    m24 = lambda hm: None if not hm else int(hm[:2]) * 60 + int(hm[3:5]) + (1440 if hm < "04:00" else 0)
     for o in setores:
         o.pop("_cv", None); o.pop("_tr", None)
+        ini_, an_ = o.get("ini"), [list(r) + [r[0]] for r in o.get("ring") or [] if len(r) > 2]
+        ent = m24(ini_[2]) if ini_ and an_ and any(dentro(ini_[:2], r) for r in an_) and not (gar and dist_m(ini_[:2], gar) <= RAIO_GARAGEM) else None
+        if o.get("saida") and ent is not None and m24(o["saida"]) > ent:   # saída da garagem depois do 1º ponto do GPS dentro do setor: não pode
+            print("   ", o["s"], "saída da garagem", o["saida"], "depois da entrada no setor → descartada")
+            o.pop("saida")
+        fim = m24(o.get("uset"))
+        if o.get("volta") and fim is not None and m24(o["volta"]) < fim - 5:   # retorno antes do último ponto no setor: não pode
+            print("   ", o["s"], "retorno à garagem", o["volta"], "antes do último ponto no setor → descartado")
+            o["volta"] = None
     ctrl_min = {(v, t.replace(second=0)): d[t][2] for v, d in por_veic.items() for t in d}   # minuto em que o caminhão tinha controle (e de qual setor)
     aneis_cod = {x["s"]: [list(r) + [r[0]] for r in x.get("ring") or [] if len(r) > 2] for x in setores}
     memo = {}
@@ -1561,7 +1576,7 @@ def proximo_dia_antigo(idx, dia, feitos):
     for k in range(1, CID.get("dias_busca", DIAS_BUSCA) + 1):
         d = (dt.date.fromisoformat(dia) - dt.timedelta(days=k)).isoformat()
         v = idx["dias"].get(d)
-        if isinstance(v, dict) and v.get("s") in ("vazio", "final") and v.get("v", 1) >= VERSAO_HIST:   # versões antigas (e dias vazios antigos) são refeitas
+        if isinstance(v, dict) and v.get("s") in ("vazio", "final") and (v.get("v", 1) >= VERSAO_HIST or k > REFAZ_DIAS.get(v.get("v", 1), 10 ** 6)):   # versões antigas (e dias vazios antigos) são refeitas
             continue
         return d
     return None
