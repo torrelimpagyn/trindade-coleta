@@ -43,8 +43,8 @@ ACESSO_ATERRO = [  # via de acesso ao aterro (OpenStreetMap): Av. dos Angicos + 
 RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
 JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
-VERSAO_HIST = 9         # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
-REFAZ_DIAS = {8: 7}     # versão antiga -> só os últimos N dias são refeitos (9: saída da garagem corrigida)
+VERSAO_HIST = 10        # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+REFAZ_DIAS = {8: 7, 9: 7}   # versão antiga -> só os últimos N dias são refeitos (9: saída da garagem; 10: rastreador completo do caminhão)
 
 
 ORCAMENTO = 200        # segundos por execução (o laço roda a cada 5 min); o histórico antigo só usa o que sobrar
@@ -577,28 +577,33 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
                 print("  previsão", o["s"], "falhou:", e)
 
 
-APOIOS = [0]   # setores com apoio achado pelo GPS nesta execução (só a contagem vai para o log público)
+APOIOS = [0, 0]   # setores com apoio achado pelo GPS / com rastreio completo do caminhão (só a contagem vai para o log público)
 
 
-def apoio_gps(s, dia, o, frota, gar, ocupado):
-    """Setor com controle na INLOG: procura no GPS caminhões da frota coletando nele sem controle desse setor (apoio que
-    não abriu controle, ou abriu no setor errado). Entra quem ficou 15 min ou mais devagar dentro do polígono (fora do
-    raio da garagem), passou a maior parte desse tempo no setor e cobriu pelo menos 5% da rota.
-    Devolve [(veículo, pontos no setor, (primeiro, último ponto lento no setor), últimos pontos do dia)]."""
+def apoio_gps(s, dia, o, frota, gar, ocupado, ater=None):
+    """GPS do rastreador dos caminhões (passagens da INLOG perto do setor) num setor que tem controle na INLOG:
+    - caminhão do próprio setor (tem controle dele): entra tudo o que ele fez no setor, também antes de abrir o controle
+      ou com o controle aberto em outro setor. O rastreio do controle da INLOG só cobre o tempo do controle.
+    - caminhão da frota sem controle desse setor (apoio): entra se ficou 15 min ou mais devagar dentro do polígono
+      (fora do raio da garagem), passou boa parte desse tempo no setor e cobriu pelo menos 5% da rota.
+    Devolve [(veículo, pontos no setor, (primeiro, último ponto lento no setor), últimos pontos do dia, é do setor pela INLOG)]."""
     u = url_passagens(o, dia)
     if not u or not o.get("ring"):
         return []
     idv = lambda v: re.sub(r"[^0-9A-Z]", "", norm(v))
     ja = {idv(v) for v in o["veic"]}
     pref = {m.group(1) for m in (re.fullmatch(r"([A-Z]{2,3})\d{2,3}", f) for f in frota) if m}
-    no_setor = lambda q: not (gar and dist_m(q, gar) <= RAIO_GARAGEM) and any(dentro(q, r) for r in o["ring"])
-    por_v = {}
+    na_gar = lambda q: bool(gar and dist_m(q, gar) <= RAIO_GARAGEM)
+    no_setor = lambda q: not na_gar(q) and any(dentro(q, r) for r in o["ring"])
+    por_v, inl = {}, set()
     for blk in pegar_json(s, u) or []:
         for h in blk.get("Historico") or []:
             v = h.get("Identificador") or blk.get("IdentificadorVeiculo") or "?"
             iv = idv(v); m = re.fullmatch(r"([A-Z]{2,3})\d{2,3}", iv)
-            if iv in ja or not (iv in frota or (m and m.group(1) in pref)):
-                continue   # já é do setor pela INLOG, ou não é caminhão de coleta da cidade
+            if iv in ja:
+                inl.add(v)
+            elif not (iv in frota or (m and m.group(1) in pref)):
+                continue   # não é caminhão de coleta da cidade
             t = dt.datetime.fromisoformat(h["DataHora"][:19])
             if t.date().isoformat() != dia:
                 continue
@@ -610,23 +615,50 @@ def apoio_gps(s, dia, o, frota, gar, ocupado):
     for v, d in por_v.items():
         tr = [(t, q, vel) for t, (q, vel) in sorted(d.items())]
         dl = [x for x in tr if x[2] <= 25 and no_setor(x[1])]
+        tail = [x for x in tr if (tr[-1][0] - x[0]).total_seconds() <= 900]
+        if v in inl:   # caminhão do setor: rastreio completo dele no setor
+            if len(dl) >= 5:
+                achados.append((v, [x for x in tr if dl[0][0] <= x[0] <= dl[-1][0]], (dl[0][0], dl[-1][0]), tail, True))
+            continue
         if len(dl) < 30 or (dl[-1][0] - dl[0][0]).total_seconds() < 900:
             continue
         win = [x for x in tr if dl[0][0] <= x[0] <= dl[-1][0]]
-        part = len(dl) / max(1, sum(1 for x in win if x[2] <= 25))
-        cob = cobertura(o["lin"], {v: win}) if part >= .6 else None
+        lentos = [x for x in win if x[2] <= 25 and not na_gar(x[1]) and not (ater and dist_m(x[1], ater) <= RAIO_ATERRO)]
+        part = len(dl) / max(1, len(lentos))   # parado na garagem ou no aterro no meio não conta contra
+        cob = cobertura(o["lin"], {v: win}) if part >= .4 else None
         print("   ", o["s"], "apoio pelo GPS?", v, len(dl), "pontos lentos no setor · %d%% do tempo no setor" % (part * 100), "·", cob, "% da rota",
               "→ entra" if cob and cob >= 5 else "→ não entra")
         if cob and cob >= 5:
-            achados.append((v, win, (dl[0][0], dl[-1][0]), [x for x in tr if (tr[-1][0] - x[0]).total_seconds() <= 900]))
+            achados.append((v, win, (dl[0][0], dl[-1][0]), tail, False))
     return achados
 
 
-def aplicar_apoio(o, achados, dia, at):
-    """Junta ao setor os caminhões de apoio achados pelo GPS: rastreio, percentual pelo GPS, previsão e status."""
+def aplicar_apoio(o, achados, dia, at, gar=None):
+    """Junta ao setor o rastreio completo dos caminhões dele e os de apoio achados pelo GPS: rastreio no mapa,
+    percentual pelo GPS, previsão e status."""
     trv = dict(o.get("_trv") or {})
+    idv = lambda v: re.sub(r"[^0-9A-Z]", "", norm(v))
     m24 = lambda hm: None if not hm else (int(hm[:2]) * 60 + int(hm[3:5])) + (1440 if hm < "04:00" else 0)
-    for v, win, (ta, tb), tail in achados:
+    for e in achados:
+        v, win, (ta, tb), tail = e[:4]
+        if len(e) > 4 and e[4]:   # caminhão do setor: rastreio do controle + rastreador do caminhão
+            v = next((k for k in trv if idv(k) == idv(v)), v)   # mesmo caminhão com o nome escrito do jeito do controle
+            junto = sorted({x[0]: x for x in list(trv.get(v) or []) + list(win)}.values(), key=lambda x: x[0])
+            trv[v] = junto
+            u = [(x[0], x[1]) for x in junto]
+            while gar and u and dist_m(u[0][1], gar) <= RAIO_GARAGEM:
+                u.pop(0)
+            while gar and u and dist_m(u[-1][1], gar) <= RAIO_GARAGEM:
+                u.pop()
+            if len(u) > 1:
+                novo = [v, u[0][0].strftime("%H:%M"), u[-1][0].strftime("%H:%M"), *rastro_com_hora(u, dia)]
+                i = next((i for i, g in enumerate(o.get("gps") or []) if idv(g[0]) == idv(v)), None)
+                if i is None:
+                    o.setdefault("gps", []).append(novo)
+                else:
+                    o["gps"][i] = novo
+            o.setdefault("trk", []).append(v)
+            continue
         o["veic"].append(v)
         o.setdefault("apgps", []).append(v)
         o.setdefault("gps", []).append([v, ta.strftime("%H:%M"), tb.strftime("%H:%M"), *rastro_com_hora([(x[0], x[1]) for x in win], dia)])
@@ -1471,25 +1503,26 @@ def montar(s, dia, cad, at):
         trv_o = o.get("_trv")
         if not trv_o or not o.get("lin") or not o.get("ring") or o["sit"] == "GPS":
             continue
-        if hoje and o["sit"] != "ATIVO" and (agora_ - max(p[0] for tr in trv_o.values() for p in tr)).total_seconds() > 10800:
-            continue
+        parado = hoje and o["sit"] != "ATIVO" and (agora_ - max(p[0] for tr in trv_o.values() for p in tr)).total_seconds() > 10800
         k = "%s|%s|%s|apoio" % (CID["slug"], dia, o["s"])
-        if hoje and k in GPSX and time.time() - GPSX[k]["t"] < 540:   # confere cada setor no máximo a cada 10 min
-            ach = [(v, [(dt.datetime.fromisoformat(a), (b, c), e) for a, b, c, e in w], (dt.datetime.fromisoformat(ta), dt.datetime.fromisoformat(tb)),
-                    [(dt.datetime.fromisoformat(a), (b, c), e) for a, b, c, e in tl]) for v, w, (ta, tb), tl in GPSX[k]["a"]]
+        if hoje and k in GPSX and (parado or time.time() - GPSX[k]["t"] < 540):   # confere cada setor no máximo a cada 10 min (encerrado há 3 h: vale o último)
+            des = lambda L: [(dt.datetime.fromisoformat(a), (b, c), e) for a, b, c, e in L]
+            ach = [(x[0], des(x[1]), (dt.datetime.fromisoformat(x[2][0]), dt.datetime.fromisoformat(x[2][1])), des(x[3]), len(x) > 4 and x[4]) for x in GPSX[k]["a"]]
             if ach:
-                aplicar_apoio(o, ach, dia, at); APOIOS[0] += 1
+                aplicar_apoio(o, ach, dia, at, gar)
+                APOIOS[0] += any(not x[4] for x in ach); APOIOS[1] += any(x[4] for x in ach)
             continue
         fila_a.append((o, k))
     buscar_varios(s, [url_passagens(o, dia) for o, _ in fila_a if url_passagens(o, dia)], n=4)
     for o, k in fila_a:
         try:
-            ach = apoio_gps(s, dia, o, frota | {idv(v) for v in por_veic}, gar, ocupado)
+            ach = apoio_gps(s, dia, o, frota | {idv(v) for v in por_veic}, gar, ocupado, ater)
             if hoje:
                 ser = lambda L: [[x[0].isoformat(), x[1][0], x[1][1], x[2]] for x in L]
-                GPSX[k] = {"t": time.time(), "a": [[v, ser(w), [ta.isoformat(), tb.isoformat()], ser(tl)] for v, w, (ta, tb), tl in ach]}
+                GPSX[k] = {"t": time.time(), "a": [[v, ser(w), [ta.isoformat(), tb.isoformat()], ser(tl), f] for v, w, (ta, tb), tl, f in ach]}
             if ach:
-                aplicar_apoio(o, ach, dia, at); APOIOS[0] += 1
+                aplicar_apoio(o, ach, dia, at, gar)
+                APOIOS[0] += any(not x[4] for x in ach); APOIOS[1] += any(x[4] for x in ach)
         except SystemExit:
             print("  apoio pelo GPS", o["s"], "indisponível")
         except Exception as e:
@@ -1630,7 +1663,7 @@ def main():
                 print("dia", d, "falhou (%d):" % t, e)
                 idx["dias"][d] = {"s": "vazio", "v": VERSAO_HIST, "e": str(e)[:120]} if t >= 3 else {"s": "erro", "t": t}
             salvar_indice(idx, dia)
-    print("tempo total: %.0f s" % (time.time() - _T0), "· setores com apoio pelo GPS: %d" % APOIOS[0])
+    print("tempo total: %.0f s" % (time.time() - _T0), "· setores com apoio pelo GPS: %d · com rastreio completo do caminhão: %d" % tuple(APOIOS))
 
 
 def chave_de(senha, sal, it):
