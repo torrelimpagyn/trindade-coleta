@@ -167,7 +167,7 @@ function fimExp(s){const cfg=EXP[CX.s];if(cfg){const [y,mo,da]=D.dia.split('-'),
  const J=janela(s);return J?J[0]+(D.jornada||440):null}   // fim do expediente do turno (nas cidades sem expediente cadastrado: saída + jornada)
 function apoio(s){   // caminhões que entraram no setor depois do primeiro: apoio (ativo = GPS no setor há até 20 min)
  const M=new Map();(s.gps||[]).forEach(g=>{const v=nv(g[0]);let a=m24(mins(g[1])),b=m24(mins(g[2]));if(a==null)return;if(b==null)b=a;while(b<a)b+=1440;const x=M.get(v);if(!x)M.set(v,{v,a,b});else{x.a=Math.min(x.a,a);x.b=Math.max(x.b,b)}});
- const L=[...M.values()].sort((x,y)=>x.a-y.a);return L.slice(1).map(x=>({...x,ativo:aoVivo()&&(idade(hora(x.b))??99)<=20}))}
+ const L=[...M.values()].sort((x,y)=>x.a-y.a);return L.slice(1).map(x=>({...x,gps:(s.apgps||[]).some(v=>nv(v)===x.v),ativo:aoVivo()&&(idade(hora(x.b))??99)<=20}))}
 function etaHtml(s,p){if(!aoVivo()||s.ritmo==null||p>=META)return '';const e=m24(mins(s.eta)),f=fimExp(s),late=e!=null&&f!=null&&e>f;   // corrida contra o relógio
  return `<div class="eta${late||!s.eta?' late':''}">⏱ ${s.eta?`Previsão de chegar a 95%: <b>${s.eta}</b>`:'Ritmo baixo demais para prever o fim'} · ritmo ${nf(s.ritmo)}%/h${late?` · <span class="al">⚠ passa do expediente (até ${hora(f)})</span>`:f!=null&&s.eta?` · expediente até ${hora(f)}`:''}</div>`}
 const nivel=v=>v>=META?'ok':v>=LIM?'wa':'ba';
@@ -270,7 +270,7 @@ function renderCol(){const S0=D.S.filter(s=>tno(s)===TURNO),S=S0.slice();
 function card(s){const k=stK(s),p=pg(s),lv=nivel(p),g=s.pgps!=null,ag=k==='ag',w0=PREV[s.s]??0,ve=[...new Set([...(s.veic||[]),...(s.gps||[]).map(x=>nv(x[0]))].map(nv))].filter(v=>v&&v!=='?');
  const cl=`k-${k} l-${lv}`,cor=ag?HEX.ag:HEX[lv];
  return `<div class="sec ${cl} ${OPEN.has(s.s)?'open':''}" data-c="${esc(s.s)}">
-  <div class="sh"><span class="nm">${esc(s.s)}</span><div class="mid"><span class="stp ${k} ${k==='in'?(lv==='ok'?'wa':lv):''}"><span class="dt"></span>${ST[k]}${k!=='ag'&&p>=META?'<span class="bdg">🏆 meta</span>':''}</span>${ve.length?`<span class="vei">🚛 ${esc(ve.join(' · '))}</span>`:''}${k==='ex'?apoio(s).filter(x=>x.ativo).map(x=>`<span class="apo">🤝 apoio ${esc(x.v)} · há ${hm((idade(hora(x.a))??0)*60)}</span>`).join(''):''}${atS(s).length?`<span class="vei">⛰ ${atS(s).length} ${atS(s).length>1?'viagens':'viagem'} ao aterro</span>`:''}</div>
+  <div class="sh"><span class="nm">${esc(s.s)}</span><div class="mid"><span class="stp ${k} ${k==='in'?(lv==='ok'?'wa':lv):''}"><span class="dt"></span>${ST[k]}${k!=='ag'&&p>=META?'<span class="bdg">🏆 meta</span>':''}</span>${ve.length?`<span class="vei">🚛 ${esc(ve.join(' · '))}</span>`:''}${k==='ex'?apoio(s).filter(x=>x.ativo).map(x=>`<span class="apo">🤝 apoio ${esc(x.v)}${x.gps?' (GPS)':''} · há ${hm((idade(hora(x.a))??0)*60)}</span>`).join(''):''}${atS(s).length?`<span class="vei">⛰ ${atS(s).length} ${atS(s).length>1?'viagens':'viagem'} ao aterro</span>`:''}</div>
   <span class="pc" style="color:${ag?'var(--mut)':CT[lv]}">${ag?'—':nf(p)+'%'}<small>${g?'RASTREIO':'INLOG'}</small></span><span class="ch">▼</span></div>
   <div class="bar"><span data-w="${ag?0:Math.min(100,p)}" style="width:${ag?0:w0}%;background:${cor}"></span><i class="meta"></i></div>
   ${g?`<div class="ib"><small>INLOG${s.agd?' · agenda '+agd(s):''}</small><div class="bar"><span data-w="${Math.min(100,s.pct||0)}" style="width:0"></span></div><b>${nf(s.pct||0)}%</b></div>`:'<div style="height:6px"></div>'}${k==='ex'?etaHtml(s,p):''}
@@ -287,7 +287,7 @@ function card(s){const k=stK(s),p=pg(s),lv=nivel(p),g=s.pgps!=null,ag=k==='ag',w
    <div class="kv"><span>Velocidade média</span><b>${s.vel?nf(s.vel,1)+' km/h':'—'}</b></div>
    ${(s.cpt||[]).length?`<div class="kv"><span>Compactações (sensor do compactador)</span><b>${s.cpt.length} · ${hm(s.cpt.reduce((a,c)=>a+(c[3]||0),0))}</b></div>`:''}
    <div class="kv"><span>Viagens ao aterro</span><b>${atS(s).length?atS(s).length+' · '+atS(s).map(x=>(x.ini||'').slice(11,16)).join(', '):'nenhuma'}</b></div>
-   ${apoio(s).map(x=>`<div class="kv"><span>Apoio${x.ativo?' (no setor agora)':''}</span><b>${esc(x.v)} · ${hora(x.a)}–${x.ativo?'agora':hora(x.b)} (${hm(((x.ativo?(idade(hora(x.a))??0):x.b-x.a))*60)})</b></div>`).join('')}
+   ${apoio(s).map(x=>`<div class="kv"><span>Apoio${x.gps?' pelo GPS (sem controle na INLOG)':''}${x.ativo?' (no setor agora)':''}</span><b>${esc(x.v)} · ${hora(x.a)}–${x.ativo?'agora':hora(x.b)} (${hm(((x.ativo?(idade(hora(x.a))??0):x.b-x.a))*60)})</b></div>`).join('')}
    ${s.eta?`<div class="kv"><span>Previsão de chegar a 95% (ritmo ${nf(s.ritmo)}%/h)</span><b>${s.eta}</b></div>`:''}
    <div class="kv"><span>Paradas longas no setor (5 min ou mais)</span><b>${(s.par||[]).length?(s.par.length+' · '+hm(s.stop)):'nenhuma'}</b></div>
    ${(s.par||[]).map(p=>`<a class="par" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p[3]},${p[4]}"><span>${p[0]} às ${p[1]}</span><b>${hm(p[2])}</b><i>ver local ›</i></a>`).join('')}
@@ -444,7 +444,7 @@ document.getElementById('go').onclick=()=>{const i=document.getElementById('pw')
  try{if(document.getElementById('lembra').checked){localStorage.setItem('tc_pw',v);localStorage.setItem('tc_pw_exp',Date.now()+PWD)}else sessionStorage.setItem('tc_pw',v)}catch(e){}carregar()};
 document.getElementById('sair').onclick=()=>{esquecer();location.reload()};
 document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
-const VERSAO='2026-11-06.1';   // ao publicar mudança no site, troque este número: as telas abertas se atualizam sozinhas
+const VERSAO='2026-11-09.1';   // ao publicar mudança no site, troque este número: as telas abertas se atualizam sozinhas
 setInterval(async()=>{if(DIA||document.getElementById('rel')||document.getElementById('sheet').classList.contains('open'))return;
  try{const t=await(await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'})).text(),m=t.match(/const VERSAO='([^']+)'/);if(m&&m[1]!==VERSAO)location.reload()}catch(e){}},600000);
 cidades();carregar();setInterval(()=>{if(!DIA)indice()},900000);setInterval(()=>{if(D&&!DIA&&!document.getElementById('sheet').classList.contains('open'))carregar()},120000);
