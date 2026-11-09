@@ -275,7 +275,7 @@ function card(s){const k=stK(s),p=pg(s),lv=nivel(p),g=s.pgps!=null,ag=k==='ag',w
   <div class="bar"><span data-w="${ag?0:Math.min(100,p)}" style="width:${ag?0:w0}%;background:${cor}"></span><i class="meta"></i></div>
   ${g?`<div class="ib"><small>INLOG${s.agd?' · agenda '+agd(s):''}</small><div class="bar"><span data-w="${Math.min(100,s.pct||0)}" style="width:0"></span></div><b>${nf(s.pct||0)}%</b></div>`:'<div style="height:6px"></div>'}${k==='ex'?etaHtml(s,p):''}
   <div class="det"><span class="pill">${esc(s.s)} · ${ST[k]}</span>
-   <div class="kv"><span>Pelo rastreio (GPS)</span><b style="color:${CT[lv]}">${g?nf(s.pgps)+'%':'sem rota programada'}</b></div>
+   <div class="kv"><span>Pelo rastreio (GPS)</span><b style="color:${CT[lv]}">${g?nf(s.pgps)+'%':(s.lin||[]).length?'nenhum caminhão no setor ainda':'sem rota programada'}</b></div>
    <div class="kv"><span>Pela INLOG</span><b>${s.sit==='GPS'?'não registrou (0%)':nf(s.pct||0)+'%'}</b></div>
    ${s.agd?`<div class="note" style="text-align:left;margin:6px 0;padding:7px 9px;border-radius:8px;background:var(--soft);font-size:12px">📅 A INLOG lançou esta coleta na agenda do dia anterior (<b>${agd(s)}</b>), mas o caminhão saiu às <b>${esc(s.saida||s.entrada||'—')}</b> deste dia. Por isso, a tela da INLOG deste dia não mostra essa coleta (lá o setor aparece ${s.pdia?'com '+nf(s.pdia)+'%, de outro registro':'como Aguardando 0%'}); para conferir, consulte a data ${agd(s)} na INLOG.</div>`:''}
    <div class="kv"><span>Saída da garagem</span><b>${s.saida||(s.rast0?'GPS desde '+s.rast0:'—')}</b></div>
@@ -444,7 +444,7 @@ document.getElementById('go').onclick=()=>{const i=document.getElementById('pw')
  try{if(document.getElementById('lembra').checked){localStorage.setItem('tc_pw',v);localStorage.setItem('tc_pw_exp',Date.now()+PWD)}else sessionStorage.setItem('tc_pw',v)}catch(e){}carregar()};
 document.getElementById('sair').onclick=()=>{esquecer();location.reload()};
 document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
-const VERSAO='2026-11-09.1';   // ao publicar mudança no site, troque este número: as telas abertas se atualizam sozinhas
+const VERSAO='2026-11-09.2';   // ao publicar mudança no site, troque este número: as telas abertas se atualizam sozinhas
 setInterval(async()=>{if(DIA||document.getElementById('rel')||document.getElementById('sheet').classList.contains('open'))return;
  try{const t=await(await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'})).text(),m=t.match(/const VERSAO='([^']+)'/);if(m&&m[1]!==VERSAO)location.reload()}catch(e){}},600000);
 cidades();carregar();setInterval(()=>{if(!DIA)indice()},900000);setInterval(()=>{if(D&&!DIA&&!document.getElementById('sheet').classList.contains('open'))carregar()},120000);
