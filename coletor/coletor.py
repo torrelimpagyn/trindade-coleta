@@ -110,6 +110,44 @@ def buscar_varios(s, urls, n=8):
                 _RESP[u] = j
 
 
+def frota_recente(s, dia, dias=14):
+    """Caminhões que apareceram em algum setor da cidade na grade da INLOG nas últimas 2 semanas. O caminhão reserva ou
+    de apoio (ex.: AR-003) nem sempre está na grade de hoje ou de ontem (segunda-feira, depois do domingo), e sem isso o
+    GPS dele era ignorado. A grade de um dia que já passou não muda: cada dia é baixado uma vez por execução do workflow."""
+    arq = os.path.join(CACHE, "frota_grade.json")
+    try:
+        memo = json.load(open(arq))
+    except Exception:
+        memo = {}
+    d0 = dt.date.fromisoformat(dia)
+    dias_ = [(d0 - dt.timedelta(days=k)).isoformat() for k in range(2, dias + 1)]
+    faltam = [d for d in dias_ if d not in memo]
+    if faltam:
+        buscar_varios(s, [GRID.format(d=d) for d in faltam], n=4)
+    for d in faltam:
+        try:
+            g = pegar_json(s, GRID.format(d=d))
+        except (SystemExit, Exception):
+            continue
+        pares = set()
+        for y in (g or {}).get("Data", {}).get("Data") or []:
+            m = norm(y.get("MacroSetor"))
+            if any(k in m for k in EXCLUI):
+                continue
+            for k in ("Veiculo", "Placa"):
+                if y.get(k):
+                    pares.add((m.split(" - ")[0].strip(), re.sub(r"[^0-9A-Z]", "", norm(y[k]))))
+        memo[d] = sorted(pares)
+        _RESP.pop(GRID.format(d=d), None)   # a grade antiga não precisa ficar na memória
+    memo = {d: v for d, v in memo.items() if d in dias_}
+    try:
+        os.makedirs(CACHE, exist_ok=True)
+        json.dump(memo, open(arq, "w"))
+    except OSError:
+        pass
+    return {v for d in dias_ for c, v in memo.get(d, []) if c == CID["chave"]}
+
+
 def limpar_respostas():
     for u in [u for u in _RESP if "CarregarGridPorData" not in u]:
         _RESP.pop(u)
@@ -1135,6 +1173,10 @@ def montar(s, dia, cad, at):
                 emprestado[codigo(y.get("Setor"))] = y
     except SystemExit:
         pass
+    try:
+        frota |= frota_recente(s, dia)   # + caminhões que estiveram na grade da cidade nas últimas 2 semanas (reserva e apoio)
+    except Exception as e:
+        print("  frota recente falhou:", e)
     setores, gps_dia, por_veic, pend = [], [], {}, []
     jan_ini = dt.datetime.fromisoformat(dia) + dt.timedelta(hours=2)   # o dia operacional vai das 02h às 04h do dia seguinte
     jan_fim = jan_ini + dt.timedelta(hours=26)
