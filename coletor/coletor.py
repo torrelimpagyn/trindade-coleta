@@ -43,8 +43,8 @@ ACESSO_ATERRO = [  # via de acesso ao aterro (OpenStreetMap): Av. dos Angicos + 
 RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
 JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
-VERSAO_HIST = 10        # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
-REFAZ_DIAS = {8: 7, 9: 7}   # versão antiga -> só os últimos N dias são refeitos (9: saída da garagem; 10: rastreador completo do caminhão)
+VERSAO_HIST = 11        # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+REFAZ_DIAS = {8: 7, 9: 7, 10: 3}   # versão antiga -> só os últimos N dias são refeitos (9: saída da garagem; 10: rastreador completo; 11: turno pelo GPS)
 
 
 ORCAMENTO = 200        # segundos por execução (o laço roda a cada 5 min); o histórico antigo só usa o que sobrar
@@ -473,6 +473,40 @@ def url_passagens(o, dia):
 
 
 INICIO_TURNO = {"MATUTINO": 7, "MANHA": 7, "DIURNO": 8, "INTEGRAL": 8, "VESPERTINO": 14, "TARDE": 14, "NOTURNO": 20}
+TIPO_TURNO = {"MATUTINO": "D", "MANHA": "D", "DIURNO": "D", "INTEGRAL": "D", "VESPERTINO": "T", "TARDE": "T", "NOTURNO": "N"}
+HORARIO_TIPO = {"D": ((240, 960), (1680, 2400)), "T": ((720, 1200),), "N": ((960, 1680),)}   # minutos; até 04h conta como +24h
+NOME_TIPO = {"D": "DIURNO", "T": "VESPERTINO", "N": "NOTURNO"}
+
+
+def turno_pelo_gps(setores):
+    """O turno que vem na grade da INLOG às vezes não bate com o horário em que o caminhão trabalhou (ex.: setor diurno
+    de Araguari aparecendo no noturno). Quando o GPS mostra o setor feito quase todo fora do horário do turno da INLOG
+    (menos de 1 h dentro dele), o setor vai para o turno do horário do GPS, com o nome que a cidade usa para esse turno."""
+    m24 = lambda hm: None if not hm else int(hm[:2]) * 60 + int(hm[3:5]) + (1440 if hm < "04:00" else 0)
+    usados = {}
+    for o in setores:
+        k = norm(o.get("turno") or "")
+        if TIPO_TURNO.get(k):
+            usados.setdefault(TIPO_TURNO[k], {}).setdefault(k, 0)
+            usados[TIPO_TURNO[k]][k] += 1
+    for o in setores:
+        g = [x for x in o.get("gps") or [] if x[1]]
+        a = m24(o.get("saida")) or (min(m24(x[1]) for x in g) if g else None)
+        if a is None:
+            continue   # caminhão ainda não saiu: fica o turno da INLOG
+        fins = [m24(x[2]) for x in g if x[2]]
+        b = m24(o.get("volta")) or (max(fins) if fins else a + 60)
+        while b < a:
+            b += 1440
+        ov = {tp: sum(max(0, min(b, w[1]) - max(a, w[0])) for w in ws) for tp, ws in HORARIO_TIPO.items()}
+        tipo = TIPO_TURNO.get(norm(o.get("turno") or ""))
+        melhor = max(ov, key=ov.get)
+        if (tipo and ov[tipo] >= 60) or not ov[melhor] or melhor == tipo:
+            continue
+        nome = max(usados[melhor].items(), key=lambda kv: kv[1])[0] if usados.get(melhor) else NOME_TIPO[melhor]
+        print("   ", o["s"], "turno da INLOG", o.get("turno"), "· caminhão trabalhou das", "%02d:%02d" % divmod(a % 1440, 60), "às",
+              "%02d:%02d" % divmod(b % 1440, 60), "→", nome)
+        o["turno_inlog"], o["turno"] = o.get("turno"), nome
 CAMPOS_GPS = ("sit", "fonte", "veic", "pgps", "entrada", "ini", "gps", "dist", "vel", "fim_gps", "pos", "ult", "vivo", "ritmo", "eta")
 GPSX = {}
 
@@ -1529,6 +1563,10 @@ def montar(s, dia, cad, at):
             print("  apoio pelo GPS", o["s"], "falhou:", e)
     for o in setores:
         o.pop("_trv", None)
+    try:
+        turno_pelo_gps(setores)   # turno pelo horário do GPS quando o da INLOG não bate
+    except Exception as e:
+        print("  turno pelo GPS falhou:", e)
     limpar_respostas()
     A = aterro(por_veic, tuple(cad["aterro"])) if cad.get("aterro") else None
     if A:
