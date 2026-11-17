@@ -473,40 +473,59 @@ def url_passagens(o, dia):
 
 
 INICIO_TURNO = {"MATUTINO": 7, "MANHA": 7, "DIURNO": 8, "INTEGRAL": 8, "VESPERTINO": 14, "TARDE": 14, "NOTURNO": 20}
-TIPO_TURNO = {"MATUTINO": "D", "MANHA": "D", "DIURNO": "D", "INTEGRAL": "D", "VESPERTINO": "T", "TARDE": "T", "NOTURNO": "N"}
-HORARIO_TIPO = {"D": ((240, 960), (1680, 2400)), "T": ((720, 1200),), "N": ((960, 1680),)}   # minutos; até 04h conta como +24h
-NOME_TIPO = {"D": "DIURNO", "T": "VESPERTINO", "N": "NOTURNO"}
+TURNOS_GPS = [0]   # setores com turno corrigido pelo horário do GPS nesta execução (só a contagem vai para o log)
+
+
+def janelas_turno():
+    """Horário típico de cada turno DA CIDADE, aprendido do GPS dos últimos meses (consulta de endereços): mediana do
+    início e do fim dos setores de cada turno. Cada cidade usa os nomes do seu jeito: em Trindade o "VESPERTINO" vai das
+    16h à 01h; em Anápolis o "INTEGRAL" é de noite. Também devolve o horário de costume de cada setor."""
+    try:
+        d = json.load(open(arq_consulta(), encoding="utf-8"))
+    except Exception:
+        return {}, {}
+    por_l, por_s = {}, {}
+    for x in d.get("sectors") or []:
+        if x.get("ini") is None or x.get("fim") is None or not x.get("n"):
+            continue
+        por_l.setdefault(norm(x.get("turno") or ""), []).append((x["ini"], x["fim"]))
+        por_s[str(x.get("code"))] = (x["ini"], x["fim"])
+    med = lambda v: sorted(v)[len(v) // 2]
+    return {l: (med([a for a, _ in v]), med([b for _, b in v])) for l, v in por_l.items() if l}, por_s
 
 
 def turno_pelo_gps(setores):
-    """O turno que vem na grade da INLOG às vezes não bate com o horário em que o caminhão trabalhou (ex.: setor diurno
-    de Araguari aparecendo no noturno). Quando o GPS mostra o setor feito quase todo fora do horário do turno da INLOG
-    (menos de 1 h dentro dele), o setor vai para o turno do horário do GPS, com o nome que a cidade usa para esse turno."""
+    """O turno que vem na grade da INLOG às vezes não bate com o horário em que o setor é feito (ex.: setor diurno de
+    Araguari aparecendo no noturno). Horário do setor: o do GPS de hoje; antes de o caminhão sair, o de costume do setor.
+    Se esse horário bate bem mais (1 h ou mais a mais, e menos da metade no turno da INLOG) com o horário típico de outro
+    turno da cidade, o setor vai para esse turno."""
+    JT, PS = janelas_turno()
+    if len(JT) < 2:
+        return
     m24 = lambda hm: None if not hm else int(hm[:2]) * 60 + int(hm[3:5]) + (1440 if hm < "04:00" else 0)
-    usados = {}
     for o in setores:
         k = norm(o.get("turno") or "")
-        if TIPO_TURNO.get(k):
-            usados.setdefault(TIPO_TURNO[k], {}).setdefault(k, 0)
-            usados[TIPO_TURNO[k]][k] += 1
-    for o in setores:
         g = [x for x in o.get("gps") or [] if x[1]]
         a = m24(o.get("saida")) or (min(m24(x[1]) for x in g) if g else None)
         if a is None:
-            continue   # caminhão ainda não saiu: fica o turno da INLOG
-        fins = [m24(x[2]) for x in g if x[2]]
-        b = m24(o.get("volta")) or (max(fins) if fins else a + 60)
-        while b < a:
-            b += 1440
-        ov = {tp: sum(max(0, min(b, w[1]) - max(a, w[0])) for w in ws) for tp, ws in HORARIO_TIPO.items()}
-        tipo = TIPO_TURNO.get(norm(o.get("turno") or ""))
-        melhor = max(ov, key=ov.get)
-        if (tipo and ov[tipo] >= 60) or not ov[melhor] or melhor == tipo:
+            if str(o["s"]) not in PS:
+                continue
+            a, b = PS[str(o["s"])]   # ainda não saiu: horário de costume do setor
+        else:
+            fins = [m24(x[2]) for x in g if x[2]]
+            b = m24(o.get("volta")) or (max(fins) if fins else a + 60)
+            while b < a:
+                b += 1440
+        ov = {l: max(0, min(b, w[1]) - max(a, w[0])) for l, w in JT.items()}
+        best = max(ov, key=ov.get)
+        if best == k or not ov[best]:
             continue
-        nome = max(usados[melhor].items(), key=lambda kv: kv[1])[0] if usados.get(melhor) else NOME_TIPO[melhor]
-        print("   ", o["s"], "turno da INLOG", o.get("turno"), "· caminhão trabalhou das", "%02d:%02d" % divmod(a % 1440, 60), "às",
-              "%02d:%02d" % divmod(b % 1440, 60), "→", nome)
-        o["turno_inlog"], o["turno"] = o.get("turno"), nome
+        if k in ov and (ov[best] < ov[k] + 60 or ov[k] >= (b - a) / 2):
+            continue   # o turno da INLOG também bate com o horário
+        print("   ", o["s"], "turno da INLOG", o.get("turno"), "· horário %02d:%02d–%02d:%02d" % (*divmod(a % 1440, 60), *divmod(b % 1440, 60)), "→", best)
+        o.setdefault("turno_inlog", o.get("turno"))
+        o["turno"] = best
+        TURNOS_GPS[0] += 1
 CAMPOS_GPS = ("sit", "fonte", "veic", "pgps", "entrada", "ini", "gps", "dist", "vel", "fim_gps", "pos", "ult", "vivo", "ritmo", "eta")
 GPSX = {}
 
@@ -1500,6 +1519,10 @@ def montar(s, dia, cad, at):
         if k_ not in memo:
             memo[k_] = any(dentro(pos, r) for r in rs) or any(dist_linha(pos, r) <= 100 for r in rs)
         return memo[k_]
+    try:
+        turno_pelo_gps(setores)   # antes da conferência pelo GPS: o horário de início dela depende do turno
+    except Exception as e:
+        print("  turno pelo GPS falhou:", e)
     hoje, fila, pulou = at != "final", [], []
     for o, dia_o in pend:
         u = url_passagens(o, dia_o)
@@ -1701,7 +1724,8 @@ def main():
                 print("dia", d, "falhou (%d):" % t, e)
                 idx["dias"][d] = {"s": "vazio", "v": VERSAO_HIST, "e": str(e)[:120]} if t >= 3 else {"s": "erro", "t": t}
             salvar_indice(idx, dia)
-    print("tempo total: %.0f s" % (time.time() - _T0), "· setores com apoio pelo GPS: %d · com rastreio completo do caminhão: %d" % tuple(APOIOS))
+    print("tempo total: %.0f s" % (time.time() - _T0), "· setores com apoio pelo GPS: %d · com rastreio completo do caminhão: %d" % tuple(APOIOS),
+          "· turnos corrigidos pelo GPS: %d" % TURNOS_GPS[0])
 
 
 def chave_de(senha, sal, it):
