@@ -20,7 +20,7 @@ LOGIN = BASE + "/Rastreamento/Apresentacao/Autenticador/Account/Login?ReturnUrl=
 GRID = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarGridPorData?data={d}"
 ROTA = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarRotaCompleta?codigoSetor={c}&dt={d}"
 PLANO = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarRotasPlanejadas?codigoSetor={c}&data={d}"
-PASSAGENS = BASE + "/Rastreamento/Apresentacao/RastreamentoGeral/VeiculosGenerico/BuscarPassagens?latitude={la}&longitude={lo}&raio={r}&dataInicio={d}%2000:00:00&dataFim={d}%2023:59:59"
+PASSAGENS = BASE + "/Rastreamento/Apresentacao/RastreamentoGeral/VeiculosGenerico/BuscarPassagens?latitude={la}&longitude={lo}&raio={r}&dataInicio={d}%2000:00:00&dataFim={d2}%2004:00:00"
 DETALHE = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarDetalhesPlanejamentoSetor?codigoSetor={c}&dt={d}&deslocamento=false"
 HISTV = BASE + "/Rastreamento/Apresentacao/Setores/Setores/CarregarHistoricoVeiculoPorData?codigoVeiculo={v}&dataHoraInicio={a}&dataHoraFim={b}"
 DIAS = {0: ("SEG",), 1: ("TER",), 2: ("QUA",), 3: ("QUI",), 4: ("SEX",), 5: ("SAB", "SÁB"), 6: ("DOM",)}
@@ -43,8 +43,8 @@ ACESSO_ATERRO = [  # via de acesso ao aterro (OpenStreetMap): Av. dos Angicos + 
 RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
 JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
-VERSAO_HIST = 12        # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
-REFAZ_DIAS = {8: 7, 9: 7, 10: 7, 11: 7}   # versão antiga -> só os últimos N dias são refeitos (9: saída da garagem; 10: rastreador completo; 12: turno pelo nome do setor)
+VERSAO_HIST = 13        # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+REFAZ_DIAS = {8: 7, 9: 7, 10: 7, 11: 7, 12: 7}   # versão antiga -> só os últimos N dias são refeitos (13: percentual só nos trechos de coleta; GPS de outro turno não entra no setor)
 
 
 ORCAMENTO = 200        # segundos por execução (o laço roda a cada 5 min); o histórico antigo só usa o que sobrar
@@ -86,8 +86,9 @@ def codigo(setor):
 
 def usar_cidade(slug):
     """Aponta os caminhos e parâmetros globais para a cidade."""
-    global CID, FILTRO, SAIDA, HIST, RAW_HIST, RAW_DADOS
+    global CID, FILTRO, SAIDA, HIST, RAW_HIST, RAW_DADOS, C
     CID = dict(CIDADES[slug], slug=slug)
+    C = math.cos(math.radians((CID.get("garagem") or [16.68])[0]))   # metros por grau de longitude na latitude da cidade (Jandira e Ariquemes ficam longe de Trindade)
     FILTRO = CID["chave"]
     raiz = CID.get("raiz", "c/%s/" % slug)
     SAIDA = os.path.join(AQUI, "..", "docs", raiz, "dados.enc.json")
@@ -167,7 +168,9 @@ def aneis_cidade(s, linhas, dia):
     if falta:
         buscar_varios(s, [DETALHE.format(c=c, d=dia) for c in falta])
         for c in falta:
-            j = _RESP.get(DETALHE.format(c=c, d=dia)) or {}
+            j = _RESP.get(DETALHE.format(c=c, d=dia))
+            if not isinstance(j, dict) or "Setor" not in j:
+                continue   # a INLOG não respondeu agora: tenta de novo na próxima coleta (antes o setor ficava horas sem polígono)
             areas = (j.get("Setor") or {}).get("Areas") or []
             cache[c] = [[[round(q["Latitude"] / 1e6, 5), round(q["Longitude"] / 1e6, 5)] for q in a.get("Coordenadas") or []] for a in areas]
         os.makedirs(CACHE, exist_ok=True)
@@ -292,13 +295,14 @@ def simplificar_idx(pts, tol=6):
     return sorted(manter)
 
 
-VEL_COLETA = 40   # km/h: trecho rodado acima disso (nas duas pontas e na média) é deslocamento, não coleta
+VEL_COLETA = 40   # km/h: só para reconhecer apoio e setor sem controle (acima disso o caminhão está só passando)
 RAIO_GPS = 35     # metros entre o GPS e a rua da rota (erro do GPS + largura de avenidas com canteiro)
 
 
-def cobertura(lin, trv, raio=RAIO_GPS, vel_max=VEL_COLETA, amostra=None):
-    """Percentual da rota programada (lin) por onde o GPS do caminhão passou em velocidade de coleta, a até `raio` metros.
-    trv = {veículo: [(hora, (lat, lon), velocidade)]}."""
+def cobertura(lin, trv, raio=RAIO_GPS, vel_max=None, amostra=None):
+    """Percentual dos trechos de coleta da rota programada (lin) por onde o GPS do caminhão passou, a até `raio` metros.
+    trv = {veículo: [(hora, (lat, lon), velocidade)]}. Com vel_max, trecho rodado acima dessa velocidade não conta
+    (usado só para reconhecer apoio: caminhão que atravessa o setor depressa não está coletando nele)."""
     xy = lambda p: (p[1] * 111320 * C, p[0] * 110574)
     segs, grade = [], {}
     for pts in trv.values():
@@ -307,8 +311,8 @@ def cobertura(lin, trv, raio=RAIO_GPS, vel_max=VEL_COLETA, amostra=None):
             A, B = xy(a), xy(b)
             s_ = (t2 - t1).total_seconds()
             vm = math.hypot(B[0] - A[0], B[1] - A[1]) / s_ * 3.6 if s_ else 0
-            if s_ > 180 or (min(va, vb) > vel_max and vm > vel_max):
-                continue   # buraco no GPS ou trecho rodado rápido (deslocamento, só passando)
+            if s_ > 180 or (vel_max is not None and min(va, vb) > vel_max and vm > vel_max):
+                continue   # buraco no GPS (ou, com vel_max, trecho rodado rápido: só passando)
             k = len(segs); segs.append((A, B))
             n = max(1, int(math.hypot(B[0] - A[0], B[1] - A[1]) // 25))
             for j in range(n + 1):
@@ -463,13 +467,62 @@ def saida_aterro(setores, por_veic, A):
                 o.setdefault("uat", []).append([round(pts[t][0][0], 5), round(pts[t][0][1], 5), t.strftime("%H:%M"), a["v"], a["ini"][11:]])
 
 
-def url_passagens(o, dia):
-    pts_area = [tuple(q) for _, l in o["lin"] for q in l]
-    if not pts_area:
-        return None
-    c = (sum(p[0] for p in pts_area) / len(pts_area), sum(p[1] for p in pts_area) / len(pts_area))
-    raio = min(4000, int(max(dist_m(c, p) for p in pts_area)) + 100)
-    return PASSAGENS.format(la=round(c[0], 6), lo=round(c[1], 6), r=raio, d=dia)
+CAIXA = 0.0165     # graus (~1,8 km): a INLOG devolve as passagens numa caixa de 0,018 grau para cada lado do ponto pedido;
+MAX_CAIXAS = 4     # o "raio" não aumenta essa caixa. Setor maior que ela é coberto com até MAX_CAIXAS pedidos.
+
+
+def urls_passagens(o, dia, n=1):
+    """Endereços das passagens (GPS de todos os veículos) em volta da rota do setor, do dia operacional (até 04h do dia
+    seguinte). n = quantas caixas pedir: 1 = só em volta do centro da rota; mais = as partes com mais rota a coletar."""
+    pts = [tuple(q) for _, l in o["lin"] for q in l]
+    if not pts:
+        return []
+    d2 = (dt.date.fromisoformat(dia) + dt.timedelta(days=1)).isoformat()
+    fmt = lambda la, lo: PASSAGENS.format(la=round(la, 6), lo=round(lo, 6), r=2000, d=dia, d2=d2)
+    c = (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+    if n <= 1 or all(abs(p[0] - c[0]) <= CAIXA and abs(p[1] - c[1]) <= CAIXA for p in pts):
+        return [fmt(*c)]
+    lado, cel = 0.03, {}
+    for _, l in o["lin"]:
+        for a, b in zip(l, l[1:]):
+            L = dist_m(a, b); m = max(1, int(L // 100))
+            for k in range(m):
+                q = (a[0] + (b[0] - a[0]) * (k + .5) / m, a[1] + (b[1] - a[1]) * (k + .5) / m)
+                key = (math.floor(q[0] / lado), math.floor(q[1] / lado))
+                cel[key] = cel.get(key, 0) + L / m
+    return [fmt((i + .5) * lado, (j + .5) * lado) for (i, j), _ in sorted(cel.items(), key=lambda x: -x[1])[:n]]
+
+
+def passagens(s, o, dia, n=1):
+    """Blocos de passagens de todas as caixas do setor (um veículo pode vir em mais de um bloco)."""
+    out = []
+    for u in urls_passagens(o, dia, n):
+        out += pegar_json(s, u) or []
+    return out
+
+
+def dia_operacional(dia):
+    """O dia de coleta vai das 02h às 04h do dia seguinte (o turno da noite passa da meia-noite)."""
+    a = dt.datetime.fromisoformat(dia) + dt.timedelta(hours=2)
+    return a, a + dt.timedelta(hours=26)
+
+
+def periodos_coleta(dl, folga=300):
+    """Junta os pontos lentos dentro do setor em períodos seguidos (até 5 min entre um ponto e o próximo). Pontos soltos
+    ao longo do dia (caminhão que só atravessa o setor indo para outro lugar) não formam um período de coleta."""
+    per = []
+    for x in dl:
+        if per and (x[0] - per[-1][-1][0]).total_seconds() <= folga:
+            per[-1].append(x)
+        else:
+            per.append([x])
+    return per
+
+
+def nos_periodos(tr, per):
+    """Pontos do rastreio que caem dentro dos períodos de coleta."""
+    jan = [(p[0][0], p[-1][0]) for p in per]
+    return [x for x in tr if any(a <= x[0] <= b for a, b in jan)]
 
 
 INICIO_TURNO = {"MATUTINO": 7, "MANHA": 7, "DIURNO": 8, "INTEGRAL": 8, "VESPERTINO": 14, "TARDE": 14, "NOTURNO": 20}
@@ -534,10 +587,10 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
     (passagens perto do setor, devagar, dentro do polígono). Se achar, o setor vira "realizado pelo GPS".
     Hoje: basta o caminhão estar coletando no setor agora (10 min ou mais, a maior parte dos pontos lentos dos
     últimos 40 min dentro dele), mesmo que a INLOG mostre o setor zerado ou o caminhão num controle "INEXISTENTE"."""
-    u = url_passagens(o, dia)   # centro e raio pela rota (o polígono pode ter partes longe)
-    if not u:
+    if not urls_passagens(o, dia):
         return
-    resp = pegar_json(s, u) or []
+    resp = passagens(s, o, dia, MAX_CAIXAS)   # em volta da rota (o polígono pode ter partes longe)
+    jan0, jan1 = dia_operacional(dia)
     por_v, n_ocup, outros = {}, {}, set()
     for blk in resp:
         for h in blk.get("Historico") or []:
@@ -548,7 +601,7 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
                 outros.add(v)
                 continue   # veículo que não é caminhão de coleta da cidade (carro de apoio, outra operação etc.)
             t = dt.datetime.fromisoformat(h["DataHora"][:19])
-            if t.date().isoformat() != dia:
+            if not (jan0 <= t < jan1):
                 continue
             if ocupado and ocupado(v, t, (h["Latitude"] / 1e6, h["Longitude"] / 1e6), o["s"]):
                 n_ocup[v] = n_ocup.get(v, 0) + 1
@@ -565,11 +618,13 @@ def gps_sem_controle(s, dia, o, ocupado=None, min_cob=20, min_pts=120, hoje=Fals
     agora = dt.datetime.now(TZ).replace(tzinfo=None)
     for v, d in por_v.items():
         tr = [(t, q, vel) for t, (q, vel) in sorted(d.items())]
-        dentro_lento = [x for x in tr if x[2] <= 25 and no_setor(x[1])]
+        per = [p for p in periodos_coleta([x for x in tr if x[2] <= 25 and no_setor(x[1])]) if (p[-1][0] - p[0][0]).total_seconds() >= 600]
+        dentro_lento = [x for p in per for x in p]   # só períodos seguidos de 10 min ou mais coletando no setor
         if len(dentro_lento) < (10 if hoje else min_pts):
             continue
-        span = (dentro_lento[-1][0] - dentro_lento[0][0]).total_seconds()
-        cob = cobertura(o["lin"], {v: tr})
+        tr = nos_periodos(tr, per)   # o que o caminhão fez fora desses períodos (outro turno, só passando) não é deste setor
+        span = sum((p[-1][0] - p[0][0]).total_seconds() for p in per)
+        cob = cobertura(o["lin"], {v: tr}, vel_max=VEL_COLETA)
         ok = bool(cob and cob >= min_cob and len(dentro_lento) >= (30 if hoje else min_pts))
         dom = None
         if hoje and not ok and span >= 600:   # coletando no setor agora?
@@ -618,22 +673,25 @@ APOIOS = [0, 0]   # setores com apoio achado pelo GPS / com rastreio completo do
 
 
 def apoio_gps(s, dia, o, frota, gar, ocupado, ater=None):
-    """GPS do rastreador dos caminhões (passagens da INLOG perto do setor) num setor que tem controle na INLOG:
-    - caminhão do próprio setor (tem controle dele): entra tudo o que ele fez no setor, também antes de abrir o controle
-      ou com o controle aberto em outro setor. O rastreio do controle da INLOG só cobre o tempo do controle.
-    - caminhão da frota sem controle desse setor (apoio): entra se ficou 15 min ou mais devagar dentro do polígono
-      (fora do raio da garagem), passou boa parte desse tempo no setor e cobriu pelo menos 5% da rota.
-    Devolve [(veículo, pontos no setor, (primeiro, último ponto lento no setor), últimos pontos do dia, é do setor pela INLOG)]."""
-    u = url_passagens(o, dia)
-    if not u or not o.get("ring"):
+    """GPS do rastreador dos caminhões (passagens da INLOG perto do setor) num setor que tem controle na INLOG. Só entram
+    períodos seguidos de coleta: pontos lentos dentro do setor com até 5 min entre um e outro. Pontos soltos ao longo do
+    dia (o caminhão atravessando o setor em outro turno) não entram: antes eles punham setor diurno "em execução" de noite.
+    - caminhão do próprio setor (tem controle dele): entram os períodos de 2 min ou mais encostados no controle (até 1 h
+      antes ou depois dele ou de outro período já aceito), sem passar pela garagem no meio. É a coleta feita antes de
+      abrir o controle ou depois de fechar; a de outro turno, horas depois, não é deste setor.
+    - caminhão da frota sem controle desse setor (apoio): entram os períodos de 15 min ou mais (30 pontos ou mais), se a
+      maior parte dos pontos lentos do período está no setor e eles cobrem pelo menos 5% da rota.
+    Devolve [(veículo, pontos nos períodos, (início, fim), últimos pontos do dia, é do setor pela INLOG)]."""
+    if not urls_passagens(o, dia) or not o.get("ring"):
         return []
     idv = lambda v: re.sub(r"[^0-9A-Z]", "", norm(v))
     ja = {idv(v) for v in o["veic"]}
     pref = {m.group(1) for m in (re.fullmatch(r"([A-Z]{2,3})\d{2,3}", f) for f in frota) if m}
     na_gar = lambda q: bool(gar and dist_m(q, gar) <= RAIO_GARAGEM)
     no_setor = lambda q: not na_gar(q) and any(dentro(q, r) for r in o["ring"])
+    jan0, jan1 = dia_operacional(dia)
     por_v, inl = {}, set()
-    for blk in pegar_json(s, u) or []:
+    for blk in passagens(s, o, dia, MAX_CAIXAS if (o.get("pgps") or 0) < 95 else 1):
         for h in blk.get("Historico") or []:
             v = h.get("Identificador") or blk.get("IdentificadorVeiculo") or "?"
             iv = idv(v); m = re.fullmatch(r"([A-Z]{2,3})\d{2,3}", iv)
@@ -642,31 +700,46 @@ def apoio_gps(s, dia, o, frota, gar, ocupado, ater=None):
             elif not (iv in frota or (m and m.group(1) in pref)):
                 continue   # não é caminhão de coleta da cidade
             t = dt.datetime.fromisoformat(h["DataHora"][:19])
-            if t.date().isoformat() != dia:
+            if not (jan0 <= t < jan1):
                 continue
             p = (h["Latitude"] / 1e6, h["Longitude"] / 1e6)
             if ocupado and ocupado(v, t, p, o["s"]):
                 continue
             por_v.setdefault(v, {})[t] = (p, h.get("Velocidade") or 0)
+    ctrl = {idv(k): x for k, x in (o.get("_tr") or {}).items()}   # início e fim do rastreio do controle de cada caminhão do setor
+    gv = {idv(k): x for k, x in (o.get("_gv") or {}).items()}     # saída e retorno à garagem de cada um (quando o GPS mostra)
+    hora = dt.timedelta(hours=1)
     achados = []
     for v, d in por_v.items():
         tr = [(t, q, vel) for t, (q, vel) in sorted(d.items())]
-        dl = [x for x in tr if x[2] <= 25 and no_setor(x[1])]
+        per = periodos_coleta([x for x in tr if x[2] <= 25 and no_setor(x[1])])
         tail = [x for x in tr if (tr[-1][0] - x[0]).total_seconds() <= 900]
-        if v in inl:   # caminhão do setor: rastreio completo dele no setor
-            if len(dl) >= 5:
-                achados.append((v, [x for x in tr if dl[0][0] <= x[0] <= dl[-1][0]], (dl[0][0], dl[-1][0]), tail, True))
+        if v in inl and idv(v) in ctrl:   # caminhão do setor: o que ele coletou encostado no controle
+            a, b = ctrl[idv(v)]
+            g0, g1 = gv.get(idv(v)) or (None, None)
+            cand = [p for p in per if len(p) >= 5 and (p[-1][0] - p[0][0]).total_seconds() >= 120
+                    and not (g0 and p[-1][0] < g0) and not (g1 and p[0][0] > g1)]
+            bons, mudou = [], True
+            while mudou:
+                mudou = False
+                for p in cand:
+                    if not any(p is q for q in bons) and p[-1][0] >= a - hora and p[0][0] <= b + hora:
+                        bons.append(p); a, b = min(a, p[0][0]), max(b, p[-1][0]); mudou = True
+            if bons:
+                bons.sort(key=lambda p: p[0][0])
+                achados.append((v, nos_periodos(tr, bons), (bons[0][0][0], bons[-1][-1][0]), tail, True))
             continue
-        if len(dl) < 30 or (dl[-1][0] - dl[0][0]).total_seconds() < 900:
+        bons = [p for p in per if len(p) >= 30 and (p[-1][0] - p[0][0]).total_seconds() >= 900]
+        if not bons:
             continue
-        win = [x for x in tr if dl[0][0] <= x[0] <= dl[-1][0]]
+        win = nos_periodos(tr, bons)
         lentos = [x for x in win if x[2] <= 25 and not na_gar(x[1]) and not (ater and dist_m(x[1], ater) <= RAIO_ATERRO)]
-        part = len(dl) / max(1, len(lentos))   # parado na garagem ou no aterro no meio não conta contra
-        cob = cobertura(o["lin"], {v: win}) if part >= .4 else None
-        print("   ", o["s"], "apoio pelo GPS?", v, len(dl), "pontos lentos no setor · %d%% do tempo no setor" % (part * 100), "·", cob, "% da rota",
+        part = sum(len(p) for p in bons) / max(1, len(lentos))   # parado na garagem ou no aterro no meio não conta contra
+        cob = cobertura(o["lin"], {v: win}, vel_max=VEL_COLETA) if part >= .4 else None
+        print("   ", o["s"], "apoio pelo GPS?", v, sum(len(p) for p in bons), "pontos lentos no setor em", len(bons), "período(s) · %d%% do tempo no setor" % (part * 100), "·", cob, "% da rota",
               "→ entra" if cob and cob >= 5 else "→ não entra")
         if cob and cob >= 5:
-            achados.append((v, win, (dl[0][0], dl[-1][0]), tail, False))
+            achados.append((v, win, (bons[0][0][0], bons[-1][-1][0]), tail, v in inl))
     return achados
 
 
@@ -733,7 +806,10 @@ def dentro(pt, anel):
 
 
 def rota_inlog(s, cod, dia, ativo, dia_semana=None):
-    """Rota programada na INLOG, em trechos, marcada com os 'pacmans' que a própria INLOG já deu como cumpridos."""
+    """Rota programada na INLOG: só os trechos de coleta, que são os que têm ponto de controle ("pacman"), marcados com os
+    que a própria INLOG já deu como cumpridos. Trecho sem ponto de controle é deslocamento (ida ao aterro, estrada entre
+    bairros, passar de novo por rua já coletada): não é rua a coletar e não entra no percentual nem no "falta coletar".
+    Antes entrava, e setor feito por inteiro aparecia com 33% (5001 de Araguari) ou 55% (1011 de Luziânia)."""
     rotas = pegar_json(s, PLANO.format(c=cod, d=dia)) or []
     if len(rotas) > 1:   # setor com rota por dia da semana (ex.: "Rota- Quarta", "Rota- SEG/SEX")
         wd = dt.date.fromisoformat(dia_semana or dia).weekday()
@@ -749,27 +825,26 @@ def rota_inlog(s, cod, dia, ativo, dia_semana=None):
     for r in rotas:
         com_pac = {p.get("CodigoTrecho") for p in r.get("Pacmans") or []}
         trechos = sorted(r.get("SetorRotaTrecho") or [], key=lambda x: x.get("Sequencia") or 0)
-        st, ult = [], None
-        for tr_ in trechos:   # trecho sem pacman herda o status do trecho anterior
-            k = tr_.get("Codigo")
-            if k in com_pac:
-                ult = 1 if feito.get(k) else 0
-            st.append(ult)
-        prim = next((x for x in st if x is not None), 0)
-        st = [prim if x is None else x for x in st]
         tot += len(com_pac); ok += sum(1 for k in com_pac if feito.get(k))
         atual, pts = None, []
-        for tr_, v in zip(trechos, st):
+        for tr_ in trechos:
+            k = tr_.get("Codigo")
+            if com_pac and k not in com_pac:   # deslocamento (rota sem nenhum ponto de controle: todos os trechos contam)
+                if pts:
+                    linhas.append([atual, pts]); atual, pts = None, []
+                continue
             P = [[round(q["Latitude"] / 1e6, 5), round(q["Longitude"] / 1e6, 5)] for q in sorted(tr_.get("SetorRotaTrechoPonto") or [], key=lambda q: q.get("Sequencia") or 0)]
             P = [q for i, q in enumerate(P) if i == 0 or q != P[i - 1]]
             if not P:
                 continue
-            if v != atual and pts:
-                linhas.append([atual, pts]); pts = [pts[-1]]
+            v = 1 if feito.get(k) else 0
+            if pts and (v != atual or dist_m(pts[-1], P[0]) > 30):
+                emenda = dist_m(pts[-1], P[0]) <= 30
+                linhas.append([atual, pts]); pts = [pts[-1]] if emenda else []
             atual = v; pts += P
         if pts:
             linhas.append([atual, pts])
-    return linhas, (round(100 * ok / tot, 1) if tot else None), [r.get("Descricao") for r in rotas]
+    return [l for l in linhas if len(l[1]) > 1], (round(100 * ok / tot, 1) if tot else None), [r.get("Descricao") for r in rotas]
 
 
 # ---------------------------------------------------------------- última coleta por rua
@@ -1146,6 +1221,8 @@ def garagem_hist(s, setores, gar, dia, at):
             vs = [x for x, y in per[cv] if x >= t1 - dt.timedelta(minutes=10) and (y is None or (y - x).total_seconds() >= 600)]
             if vs:
                 vol.append(min(vs))   # primeira chegada (de pelo menos 10 min) depois do fim do rastreio no setor
+            g = o.setdefault("_gv", {}).setdefault(v, [None, None])
+            g[0], g[1] = g[0] or (max(ds) if ds else None), g[1] or (min(vs) if vs else None)
         if not o.get("saida") and sai:
             o["saida"] = min(sai).strftime("%H:%M")
             o.pop("rast0", None)
@@ -1280,6 +1357,8 @@ def montar(s, dia, cad, at):
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
              "veic": list(veics.get(cod) or ([x["Veiculo"]] if x.get("Veiculo") else [])), "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])] if info else [r for r in aneis.get(str(x.get("CodigoSetor")), []) if len(r) > 2]}
+        if not norm(x.get("Turno") or "") and turno_no_nome(x):
+            o["fp"] = 1   # a grade traz o setor sem turno: ele não está na programação deste dia (repasse ou controle aberto no setor errado)
         pontos, t0, t1, trilhas, km_pt, trv = [], None, None, {}, {}, {}
         n_ok = n_velho = n_ontem = 0
         cpt = []   # acionamentos do compactador (sensor)
@@ -1408,6 +1487,7 @@ def montar(s, dia, cad, at):
         sai = []
         for v, tr in (trilhas.items() if gar else []):
             a, b, c0 = garagem(tr, gar)
+            o.setdefault("_gv", {})[v] = [a, b]   # saída e retorno deste caminhão (o apoio pelo GPS não passa desses limites)
             if a or c0:
                 sai.append((a, b, c0, v))
             if c0:
@@ -1477,7 +1557,7 @@ def montar(s, dia, cad, at):
         print("  garagem pelo histórico do veículo falhou:", e)
     m24 = lambda hm: None if not hm else int(hm[:2]) * 60 + int(hm[3:5]) + (1440 if hm < "04:00" else 0)
     for o in setores:
-        o.pop("_cv", None); o.pop("_tr", None)
+        o.pop("_cv", None)
         ini_, an_ = o.get("ini"), [list(r) + [r[0]] for r in o.get("ring") or [] if len(r) > 2]
         ent = m24(ini_[2]) if ini_ and an_ and any(dentro(ini_[:2], r) for r in an_) and not (gar and dist_m(ini_[:2], gar) <= RAIO_GARAGEM) else None
         if o.get("saida") and ent is not None and m24(o["saida"]) > ent:   # saída da garagem depois do 1º ponto do GPS dentro do setor: não pode
@@ -1506,7 +1586,7 @@ def montar(s, dia, cad, at):
         return memo[k_]
     hoje, fila, pulou = at != "final", [], []
     for o, dia_o in pend:
-        u = url_passagens(o, dia_o)
+        u = urls_passagens(o, dia_o, MAX_CAIXAS)
         k = "%s|%s|%s" % (CID["slug"], dia_o, o["s"])
         if not u:
             pulou.append(o["s"] + ":sem rota")
@@ -1522,7 +1602,7 @@ def montar(s, dia, cad, at):
         fila.append((o, dia_o, u, k))
     if hoje and CID.get("slug") == "trindade":
         print("    GPS dos setores sem controle: confere", [f[0]["s"] for f in fila], "· pulou", pulou)
-    buscar_varios(s, [f[2] for f in fila], n=4)
+    buscar_varios(s, [x for f in fila for x in f[2]], n=4)
     for o, dia_o, u, k in fila:
         try:
             gps_sem_controle(s, dia_o, o, ocupado, hoje=hoje, frota=frota | {idv(v) for v in por_veic}, gar=gar)
@@ -1542,7 +1622,7 @@ def montar(s, dia, cad, at):
         if not trv_o or not o.get("lin") or not o.get("ring") or o["sit"] == "GPS":
             continue
         parado = hoje and o["sit"] != "ATIVO" and (agora_ - max(p[0] for tr in trv_o.values() for p in tr)).total_seconds() > 10800
-        k = "%s|%s|%s|apoio" % (CID["slug"], dia, o["s"])
+        k = "%s|%s|%s|ap2" % (CID["slug"], dia, o["s"])   # "ap2": o que foi guardado pela regra antiga (GPS do dia inteiro) não vale mais
         if hoje and k in GPSX and (parado or time.time() - GPSX[k]["t"] < 540):   # confere cada setor no máximo a cada 10 min (encerrado há 3 h: vale o último)
             des = lambda L: [(dt.datetime.fromisoformat(a), (b, c), e) for a, b, c, e in L]
             ach = [(x[0], des(x[1]), (dt.datetime.fromisoformat(x[2][0]), dt.datetime.fromisoformat(x[2][1])), des(x[3]), len(x) > 4 and x[4]) for x in GPSX[k]["a"]]
@@ -1551,7 +1631,7 @@ def montar(s, dia, cad, at):
                 APOIOS[0] += any(not x[4] for x in ach); APOIOS[1] += any(x[4] for x in ach)
             continue
         fila_a.append((o, k))
-    buscar_varios(s, [url_passagens(o, dia) for o, _ in fila_a if url_passagens(o, dia)], n=4)
+    buscar_varios(s, [u for o, _ in fila_a for u in urls_passagens(o, dia, MAX_CAIXAS if (o.get("pgps") or 0) < 95 else 1)], n=4)
     for o, k in fila_a:
         try:
             ach = apoio_gps(s, dia, o, frota | {idv(v) for v in por_veic}, gar, ocupado, ater)
@@ -1566,7 +1646,7 @@ def montar(s, dia, cad, at):
         except Exception as e:
             print("  apoio pelo GPS", o["s"], "falhou:", e)
     for o in setores:
-        o.pop("_trv", None)
+        o.pop("_trv", None); o.pop("_tr", None); o.pop("_gv", None)
     limpar_respostas()
     A = aterro(por_veic, tuple(cad["aterro"])) if cad.get("aterro") else None
     if A:
@@ -1603,7 +1683,8 @@ def guardar_dia(dados, sit, idx):
         return
     os.makedirs(HIST, exist_ok=True)
     criptografar(json.dumps(dados, separators=(",", ":")).encode(), os.path.join(HIST, dados["dia"] + ".enc.json"), True)
-    inc = sum(1 for x in dados["S"] if encerrou(x, sit == "final"))
+    S = [x for x in S if not x.get("fp")]   # setor fora da programação do dia não entra na média nem na contagem do dia
+    inc = sum(1 for x in dados["S"] if encerrou(x, sit == "final") and not x.get("fp"))
     idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(pct_gps(x) for x in S) / len(S)) if S else 0, "n": len(S), "i": inc, "v": VERSAO_HIST}
 
 
