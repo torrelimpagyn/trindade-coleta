@@ -95,7 +95,7 @@
     luziania: [{ k: 'M', n: 'Manhã', ini: 420, fim: 920, sab: [360, 860] }, { k: 'N', n: 'Noite', ini: 1140, fim: 1640, sab: [960, 1460] }],
     'cidade-ocidental': CO_VAL, valparaiso: CO_VAL
   };
-  const TORD = ['MATUTINO', 'MANHA', 'DIURNO', 'INTEGRAL', 'VESPERTINO', 'TARDE', 'NOTURNO', 'OUTROS'];
+  const TORD = ['MATUTINO', 'MANHA', 'DIURNO', 'INTEGRAL', 'VESPERTINO', 'TARDE', 'NOTURNO', 'OUTROS', 'FP'];
   function janela(s) {   // [saída, retorno] do caminhão em minutos (GPS quando não há saída/retorno da garagem)
     let a = min(s.saida), b = min(s.volta);
     const g = (s.gps || []).map(x => [min(x[1]), min(x[2])]).filter(x => x[0] != null);
@@ -116,8 +116,10 @@
     if (cfg) {
       const G = cfg.map(T => { const w = dow === 6 && T.sab ? T.sab : [T.ini, T.fim]; return { k: T.k, n: T.n, ini: w[0], fim: w[1], S: [], fechado: atm == null || atm >= w[1] }; });
       const X = { k: 'X', n: 'Turno não identificado', S: [], fechado: D.at === 'final' };
+      const F = { k: 'FP', n: 'Não programados', S: [], fechado: D.at === 'final' };   // fora da programação do dia
       const lab = s => String(s.turno || '').toUpperCase();
       S.forEach(s => {
+        if (s.fp) { F.S.push(s); return; }
         const J = janela(s);
         let g = null;
         if (J) {
@@ -130,10 +132,10 @@
         }
         g.S.push(s);
       });
-      return G.concat([X]).filter(T => T.S.length);
+      return G.concat([X, F]).filter(T => T.S.length);
     }
     const M = new Map();   // demais cidades: turno da INLOG
-    S.forEach(s => { const t = s.turno || 'OUTROS'; if (!M.has(t)) M.set(t, { k: t, n: tlab(t), S: [], fechado: D.at === 'final' }); M.get(t).S.push(s); });
+    S.forEach(s => { const t = s.fp ? 'FP' : (s.turno || 'OUTROS'); if (!M.has(t)) M.set(t, { k: t, n: tlab(t), S: [], fechado: D.at === 'final' }); M.get(t).S.push(s); });
     const ix = t => { const i = TORD.indexOf(t); return i < 0 ? 99 : i; };
     return [...M.values()].sort((a, b) => ix(a.k) - ix(b.k));
   }
@@ -435,7 +437,8 @@
     // dia completo: resumo por turno e uma seção por turno
     B.push({ html: `<div class="tag">Planejamento e Controle</div><h1>Fechamento da coleta domiciliar</h1><div class="cid">${esc(CX.n)}</div>
       <div class="sub">${wd}, ${data} · ${estado(null)} · emitido em ${ger}</div>` });
-    const ND = numeros(todos, null, RS, jor);
+    const prog = todos.filter(s => !s.fp);   // setores fora da programação do dia não entram nos números do dia
+    const ND = numeros(prog, null, RS, jor);
     ND.ex = []; ND.hes = []; ND.heTot = 0;
     GR.forEach(T => { const N = numeros(T.S, T, RS, jor); ND.ex.push(...N.ex); ND.hes.push(...N.hes); ND.heTot += N.heTot; T.N = N; });
     ND.heMed = ND.ex.length ? ND.heTot / ND.ex.length : null;
@@ -444,7 +447,7 @@
     const lin = GR.map(T => { const N = T.N; return `<tr><td><b>${esc(T.n)}</b>${T.ini != null ? `<br><small>${expTxt(T)}</small>` : ''}</td><td class="n">${T.S.length}</td><td class="n">${N.naos.length || '—'}</td>
       <td class="n"><b>${pc(N.med)}</b></td><td class="n">${pc(N.medg)}</td><td class="n">${N.conc.length}</td><td class="n">${N.baixo.length || '—'}</td><td class="n">${N.inc.length || '—'}</td>
       <td class="n">${N.hes.length ? `<b style="color:#a86f00">${hmin(N.heTot)}</b><br><small>${N.hes.length} ${pl(N.hes.length, 'setor', 'setores')}</small>` : '0'}</td><td class="n">${N.semTot ? `${km(N.semTot)}${N.ruas ? `<br><small>${N.ruas} ${pl(N.ruas, 'rua', 'ruas')}</small>` : ''}` : '—'}</td></tr>`; });
-    if (GR.length > 1) lin.push(`<tr class="tt"><td>Dia</td><td class="n">${todos.length}</td><td class="n">${ND.naos.length || '—'}</td><td class="n">${pc(ND.med)}</td><td class="n">${pc(ND.medg)}</td><td class="n">${ND.conc.length}</td><td class="n">${ND.baixo.length || '—'}</td><td class="n">${ND.inc.length || '—'}</td><td class="n">${ND.hes.length ? hmin(ND.heTot) : '0'}</td><td class="n">${ND.semTot ? km(ND.semTot) : '—'}</td></tr>`);
+    if (GR.length > 1) lin.push(`<tr class="tt"><td>Dia</td><td class="n">${prog.length}</td><td class="n">${ND.naos.length || '—'}</td><td class="n">${pc(ND.med)}</td><td class="n">${pc(ND.medg)}</td><td class="n">${ND.conc.length}</td><td class="n">${ND.baixo.length || '—'}</td><td class="n">${ND.inc.length || '—'}</td><td class="n">${ND.hes.length ? hmin(ND.heTot) : '0'}</td><td class="n">${ND.semTot ? km(ND.semTot) : '—'}</td></tr>`);
     B.push({ tab: true, tit: '<h2>Fechamento por turno</h2>', cab: '<tr><th>Turno</th><th class="n">Setores</th><th class="n">Não saíram</th><th class="n">Rastreio</th><th class="n">INLOG</th><th class="n">≥ 95%</th><th class="n">&lt; 80%</th><th class="n">Incompletas</th><th class="n">H. extra</th><th class="n">Sem coleta</th></tr>', linhas: lin,
       pos: `<div class="ob">Rastreio (GPS) e INLOG: conclusão média das rotas que saíram; o rastreio é a base. Incompletas: rotas encerradas abaixo de 95% pelo rastreio. ${EXP[CX.s] ? 'O turno de cada setor vem do horário em que o caminhão trabalhou, comparado com o expediente; hora extra é o tempo fora do expediente.' : `Hora extra: além da jornada de ${hmin(jor)}.`} O detalhe de cada turno, com todas as ruas sem coleta, está nas páginas seguintes.</div>` });
     const mini = GR.filter(T => T.k !== 'X').map(T => { const m = mapa(T.S, todos, false); return m ? `<div><div class="mc"><b>${esc(T.n)}</b>${T.ini != null ? ' · ' + expTxt(T) : ''} · ${T.N.med == null ? '—' : n0(T.N.med) + '%'} pelo rastreio</div>${m}</div>` : ''; }).filter(Boolean);
