@@ -468,7 +468,7 @@ def saida_aterro(setores, por_veic, A):
 
 
 CAIXA = 0.0165     # graus (~1,8 km): a INLOG devolve as passagens numa caixa de 0,018 grau para cada lado do ponto pedido;
-MAX_CAIXAS = 4     # o "raio" não aumenta essa caixa. Setor maior que ela é coberto com até MAX_CAIXAS pedidos.
+MAX_CAIXAS = 4     # o "raio" não aumenta essa caixa. Setor sem controle maior que ela é coberto com até MAX_CAIXAS pedidos.
 
 
 def urls_passagens(o, dia, n=1):
@@ -691,7 +691,7 @@ def apoio_gps(s, dia, o, frota, gar, ocupado, ater=None):
     no_setor = lambda q: not na_gar(q) and any(dentro(q, r) for r in o["ring"])
     jan0, jan1 = dia_operacional(dia)
     por_v, inl = {}, set()
-    for blk in passagens(s, o, dia, MAX_CAIXAS if (o.get("pgps") or 0) < 95 else 1):
+    for blk in passagens(s, o, dia):   # uma caixa em volta do centro da rota (mais caixas aqui deixavam a coleta lenta; setor sem controle usa até MAX_CAIXAS)
         for h in blk.get("Historico") or []:
             v = h.get("Identificador") or blk.get("IdentificadorVeiculo") or "?"
             iv = idv(v); m = re.fullmatch(r"([A-Z]{2,3})\d{2,3}", iv)
@@ -1631,7 +1631,7 @@ def montar(s, dia, cad, at):
                 APOIOS[0] += any(not x[4] for x in ach); APOIOS[1] += any(x[4] for x in ach)
             continue
         fila_a.append((o, k))
-    buscar_varios(s, [u for o, _ in fila_a for u in urls_passagens(o, dia, MAX_CAIXAS if (o.get("pgps") or 0) < 95 else 1)], n=4)
+    buscar_varios(s, [u for o, _ in fila_a for u in urls_passagens(o, dia)], n=4)
     for o, k in fila_a:
         try:
             ach = apoio_gps(s, dia, o, frota | {idv(v) for v in por_veic}, gar, ocupado, ater)
