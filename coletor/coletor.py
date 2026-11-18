@@ -43,8 +43,8 @@ ACESSO_ATERRO = [  # via de acesso ao aterro (OpenStreetMap): Av. dos Angicos + 
 RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
 JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
-VERSAO_HIST = 11        # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
-REFAZ_DIAS = {8: 7, 9: 7, 10: 3}   # versão antiga -> só os últimos N dias são refeitos (9: saída da garagem; 10: rastreador completo; 11: turno pelo GPS)
+VERSAO_HIST = 12        # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
+REFAZ_DIAS = {8: 7, 9: 7, 10: 7, 11: 7}   # versão antiga -> só os últimos N dias são refeitos (9: saída da garagem; 10: rastreador completo; 12: turno pelo nome do setor)
 
 
 ORCAMENTO = 200        # segundos por execução (o laço roda a cada 5 min); o histórico antigo só usa o que sobrar
@@ -473,59 +473,43 @@ def url_passagens(o, dia):
 
 
 INICIO_TURNO = {"MATUTINO": 7, "MANHA": 7, "DIURNO": 8, "INTEGRAL": 8, "VESPERTINO": 14, "TARDE": 14, "NOTURNO": 20}
-TURNOS_GPS = [0]   # setores com turno corrigido pelo horário do GPS nesta execução (só a contagem vai para o log)
+CAT_TURNO = {"DIURNO": "D", "DIURNA": "D", "MATUTINO": "D", "MANHA": "D", "VESPERTINO": "T", "VESPERTIDO": "T", "TARDE": "T",
+             "NOTURNO": "N", "INTEGRAL": "I"}
+GRAFIA_TURNO = {"DIURNA": "DIURNO", "VESPERTIDO": "VESPERTINO"}   # erros de digitação que aparecem nos nomes da INLOG
+TURNOS_NOME = [0]   # setores em que o turno veio do nome do setor (campo da grade vazio ou de outro turno)
 
 
-def janelas_turno():
-    """Horário típico de cada turno DA CIDADE, aprendido do GPS dos últimos meses (consulta de endereços): mediana do
-    início e do fim dos setores de cada turno. Cada cidade usa os nomes do seu jeito: em Trindade o "VESPERTINO" vai das
-    16h à 01h; em Anápolis o "INTEGRAL" é de noite. Também devolve o horário de costume de cada setor."""
-    try:
-        d = json.load(open(arq_consulta(), encoding="utf-8"))
-    except Exception:
-        return {}, {}
-    por_l, por_s = {}, {}
-    for x in d.get("sectors") or []:
-        if x.get("ini") is None or x.get("fim") is None or not x.get("n"):
-            continue
-        por_l.setdefault(norm(x.get("turno") or ""), []).append((x["ini"], x["fim"]))
-        por_s[str(x.get("code"))] = (x["ini"], x["fim"])
-    med = lambda v: sorted(v)[len(v) // 2]
-    return {l: (med([a for a, _ in v]), med([b for _, b in v])) for l, v in por_l.items() if l}, por_s
+def turno_no_nome(x):
+    """Turno escrito no nome do setor ("3003 - TER/QUI/SAB - DIURNO - DOMICILIAR - ARAGUARI" -> "DIURNO")."""
+    return next((p for p in re.findall(r"[A-Z]+", norm(x.get("Setor") or "")) if p in CAT_TURNO), None)
 
 
-def turno_pelo_gps(setores):
-    """O turno que vem na grade da INLOG às vezes não bate com o horário em que o setor é feito (ex.: setor diurno de
-    Araguari aparecendo no noturno). Horário do setor: o do GPS de hoje; antes de o caminhão sair, o de costume do setor.
-    Se esse horário bate bem mais (1 h ou mais a mais, e menos da metade no turno da INLOG) com o horário típico de outro
-    turno da cidade, o setor vai para esse turno."""
-    JT, PS = janelas_turno()
-    if len(JT) < 2:
-        return
-    m24 = lambda hm: None if not hm else int(hm[:2]) * 60 + int(hm[3:5]) + (1440 if hm < "04:00" else 0)
-    for o in setores:
-        k = norm(o.get("turno") or "")
-        g = [x for x in o.get("gps") or [] if x[1]]
-        a = m24(o.get("saida")) or (min(m24(x[1]) for x in g) if g else None)
-        if a is None:
-            if str(o["s"]) not in PS:
-                continue
-            a, b = PS[str(o["s"])]   # ainda não saiu: horário de costume do setor
-        else:
-            fins = [m24(x[2]) for x in g if x[2]]
-            b = m24(o.get("volta")) or (max(fins) if fins else a + 60)
-            while b < a:
-                b += 1440
-        ov = {l: max(0, min(b, w[1]) - max(a, w[0])) for l, w in JT.items()}
-        best = max(ov, key=ov.get)
-        if best == k or not ov[best]:
-            continue
-        if k in ov and (ov[best] < ov[k] + 60 or ov[k] >= (b - a) / 2):
-            continue   # o turno da INLOG também bate com o horário
-        print("   ", o["s"], "turno da INLOG", o.get("turno"), "· horário %02d:%02d–%02d:%02d" % (*divmod(a % 1440, 60), *divmod(b % 1440, 60)), "→", best)
-        o.setdefault("turno_inlog", o.get("turno"))
-        o["turno"] = best
-        TURNOS_GPS[0] += 1
+def rotulos_turno(linhas):
+    """Como a cidade chama cada turno no campo da grade (Ariquemes chama o diurno de MANHA; Trindade, de MATUTINO)."""
+    cont = {}
+    for y in linhas:
+        p, campo = turno_no_nome(y), norm(y.get("Turno") or "")
+        if p and CAT_TURNO.get(campo) == CAT_TURNO[p]:
+            c = cont.setdefault(CAT_TURNO[p], {})
+            c[campo] = c.get(campo, 0) + 1
+    return {k: max(c, key=c.get) for k, c in cont.items()}
+
+
+def turno_do_setor(x, rotulos=None):
+    """Turno programado do setor. O nome do setor na INLOG traz o turno; o campo "Turno" da grade às vezes vem vazio
+    (1003 de Araguari em 17/11; setores matutinos de Trindade) ou de outro turno. Vale o campo, a não ser que esteja vazio
+    ou seja de outro turno que o do nome (diurno x vespertino x noturno): aí vale o nome, escrito como a cidade escreve
+    esse turno no campo. Sinônimos (DIURNO e MANHA) e o "INTEGRAL" ficam como o campo, para não mudar como cada cidade
+    separa suas turmas. O horário em que o caminhão trabalhou NÃO muda o turno: setor diurno feito à tarde continua no
+    diurno e setor noturno começado cedo continua no noturno."""
+    p = turno_no_nome(x)
+    campo = norm(x.get("Turno") or "") or None
+    if p and (not campo or (CAT_TURNO.get(campo) in ("D", "T", "N") and CAT_TURNO[p] in ("D", "T", "N") and CAT_TURNO.get(campo) != CAT_TURNO[p])):
+        TURNOS_NOME[0] += 1
+        return (rotulos or {}).get(CAT_TURNO[p]) or GRAFIA_TURNO.get(p, p)
+    return campo
+
+
 CAMPOS_GPS = ("sit", "fonte", "veic", "pgps", "entrada", "ini", "gps", "dist", "vel", "fim_gps", "pos", "ult", "vivo", "ritmo", "eta")
 GPSX = {}
 
@@ -1283,6 +1267,7 @@ def montar(s, dia, cad, at):
         if y2 and y2.get("Controle") and y2.get("CodigoSetor"):
             urls.append(ROTA.format(c=y2["CodigoSetor"], d=ontem))
     buscar_varios(s, urls)
+    rot_turno = rotulos_turno(linhas)
     for x in linhas:
         cod = codigo(x.get("Setor"))
         dia_x, extra, pdia = dia, None, x.get("PorcentagemRound") or 0
@@ -1291,7 +1276,7 @@ def montar(s, dia, cad, at):
         elif cod in emprestado:
             extra = emprestado[cod]   # hoje o setor tem registro e também uma coleta de hoje lançada na agenda de ontem: junta os dois
         info = cad["setores"].get(cod, {}) if cad.get("setores") else {}
-        o = {"s": cod, "turno": x.get("Turno"), "sit": (x.get("Situacao") or "").strip(), "pct": x.get("PorcentagemRound") or 0,
+        o = {"s": cod, "turno": turno_do_setor(x, rot_turno), "sit": (x.get("Situacao") or "").strip(), "pct": x.get("PorcentagemRound") or 0,
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
              "veic": list(veics.get(cod) or ([x["Veiculo"]] if x.get("Veiculo") else [])), "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])] if info else [r for r in aneis.get(str(x.get("CodigoSetor")), []) if len(r) > 2]}
@@ -1308,9 +1293,9 @@ def montar(s, dia, cad, at):
                     continue
                 vc = (c.get("Veiculo") or {}).get("Identificador")
                 if fd != dia:   # controle na agenda de ontem: só entra se começou no horário do turno do setor e o caminhão coletou nele
-                    h0 = INICIO_TURNO.get(norm(x.get("Turno") or ""))
+                    h0 = INICIO_TURNO.get(o["turno"] or "")
                     if ic and h0 is not None and ic < jan_ini.replace(hour=0) + dt.timedelta(hours=h0 - 5):
-                        print("   ", cod, "controle de", vc, "das", ic.strftime("%H:%M"), "na agenda de ontem fora do turno", x.get("Turno"), "→ não entra")
+                        print("   ", cod, "controle de", vc, "das", ic.strftime("%H:%M"), "na agenda de ontem fora do turno", o["turno"], "→ não entra")
                         n_velho += 1
                         continue
                     if not coletou_no_setor(c, o["ring"], gar=gar):
@@ -1519,10 +1504,6 @@ def montar(s, dia, cad, at):
         if k_ not in memo:
             memo[k_] = any(dentro(pos, r) for r in rs) or any(dist_linha(pos, r) <= 100 for r in rs)
         return memo[k_]
-    try:
-        turno_pelo_gps(setores)   # antes da conferência pelo GPS: o horário de início dela depende do turno
-    except Exception as e:
-        print("  turno pelo GPS falhou:", e)
     hoje, fila, pulou = at != "final", [], []
     for o, dia_o in pend:
         u = url_passagens(o, dia_o)
@@ -1586,10 +1567,6 @@ def montar(s, dia, cad, at):
             print("  apoio pelo GPS", o["s"], "falhou:", e)
     for o in setores:
         o.pop("_trv", None)
-    try:
-        turno_pelo_gps(setores)   # turno pelo horário do GPS quando o da INLOG não bate
-    except Exception as e:
-        print("  turno pelo GPS falhou:", e)
     limpar_respostas()
     A = aterro(por_veic, tuple(cad["aterro"])) if cad.get("aterro") else None
     if A:
@@ -1725,7 +1702,7 @@ def main():
                 idx["dias"][d] = {"s": "vazio", "v": VERSAO_HIST, "e": str(e)[:120]} if t >= 3 else {"s": "erro", "t": t}
             salvar_indice(idx, dia)
     print("tempo total: %.0f s" % (time.time() - _T0), "· setores com apoio pelo GPS: %d · com rastreio completo do caminhão: %d" % tuple(APOIOS),
-          "· turnos corrigidos pelo GPS: %d" % TURNOS_GPS[0])
+          "· turno pelo nome do setor: %d" % TURNOS_NOME[0])
 
 
 def chave_de(senha, sal, it):
