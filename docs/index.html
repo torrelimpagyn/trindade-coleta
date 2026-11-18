@@ -115,8 +115,8 @@ header h1{font-size:17px;margin:0}
  <div id="vCam" hidden><div class="sum" id="cSum"></div><div id="cList"></div></div>
  <div id="vAte" hidden><div class="sum" id="aSum"></div><div id="aList"></div></div>
  <details class="como"><summary>Como ler os dados</summary>
-  <p><b>Base: o rastreio dos caminhões.</b> O percentual principal de cada rota é a parte da rota programada por onde o GPS do caminhão passou em velocidade de coleta (a até 35 m da rua, por causa do erro do GPS e das avenidas largas; trecho rodado acima de 40 km/h é deslocamento e não conta). O percentual da INLOG aparece embaixo, só como referência, porque ela costuma atrasar ou registrar errado.</p>
-  <p><b>Em execução</b>: o GPS mostra o caminhão no setor nos últimos 30 minutos (ou indo descarregar no aterro no meio da rota, por até 2 horas). <b>Finalizada</b>: o caminhão saiu do setor com 95% ou mais da rota feita. <b>Incompleta</b>: saiu do setor com menos de 95% (voltou à garagem, foi para outra rota ou ficou mais de 30 minutos fora). <b>Aguardando</b>: nenhum caminhão começou a rota.</p>
+  <p><b>Base: o rastreio dos caminhões.</b> O percentual principal de cada rota é a parte dos trechos de coleta da rota programada por onde o GPS do caminhão passou (a até 35 m da rua, por causa do erro do GPS e das avenidas largas). Trechos de deslocamento da rota (ida ao aterro, estrada entre bairros) não entram na conta. Só conta o que o caminhão fez no próprio turno: passar pelo setor em outro turno, a caminho de outra rota, não conta. O percentual da INLOG aparece embaixo, só como referência, porque ela costuma atrasar ou registrar errado.</p>
+  <p><b>Em execução</b>: o GPS mostra o caminhão no setor nos últimos 30 minutos (ou indo descarregar no aterro no meio da rota, por até 2 horas). <b>Finalizada</b>: o caminhão saiu do setor com 95% ou mais da rota feita. <b>Incompleta</b>: saiu do setor com menos de 95% (voltou à garagem, foi para outra rota ou ficou mais de 30 minutos fora). <b>Aguardando</b>: nenhum caminhão começou a rota. <b>Não programados</b>: setores que a INLOG mostra no dia sem estarem na programação dele (repasse do dia anterior ou controle aberto no setor errado); ficam numa aba separada e não entram na média do turno.</p>
   <p><b>Cores</b>: verde 95% ou mais (meta), amarelo 80 a 94%, vermelho abaixo de 80%. O traço em cada barra marca a meta de 95%.</p>
   <p><b>Caminhões</b>: ranking pela média das rotas que cada caminhão executou no turno, com a linha do tempo e o rastreio no mapa (▶ reproduz o percurso). <b>Aterro</b>: entrada e saída pelo GPS num raio de 400 m do aterro. Saída e retorno à garagem pelo GPS (300 m da garagem). Dados atualizados a cada 5 minutos; a página recarrega sozinha. Dias anteriores ficam guardados por mais de um ano.</p>
  </details>
@@ -137,20 +137,20 @@ const mins=t=>{const m=/(\d{1,2}):(\d{2})/.exec(t||'');return m?+m[1]*60+ +m[2]:
 const nv=v=>String(v||'').trim().replace(/\s+/g,' ');
 
 // ------------------------------------------------ turnos (expediente informado; demais cidades: turno da INLOG)
-const TLAB={M:'Manhã',T:'Tarde',N:'Noite',MATUTINO:'Manhã',MANHA:'Manhã',DIURNO:'Diurno',INTEGRAL:'Integral',VESPERTINO:'Tarde',TARDE:'Tarde',NOTURNO:'Noturno',OUTROS:'Outros',X:'Sem turno'},TORD=Object.keys(TLAB);
+const TLAB={M:'Manhã',T:'Tarde',N:'Noite',MATUTINO:'Manhã',MANHA:'Manhã',DIURNO:'Diurno',INTEGRAL:'Integral',VESPERTINO:'Tarde',TARDE:'Tarde',NOTURNO:'Noturno',OUTROS:'Outros',FP:'Não programados',X:'Sem turno'},TORD=Object.keys(TLAB);
 const CO_VAL=[{k:'M',ini:420,fim:960,sab:[420,660]},{k:'T',ini:960,fim:1320,sab:[960,1320]}];
 const EXP={luziania:[{k:'M',ini:420,fim:920,sab:[360,860]},{k:'N',ini:1140,fim:1640,sab:[960,1460]}],'cidade-ocidental':CO_VAL,valparaiso:CO_VAL};
 function janela(s){let a=mins(s.saida),b=mins(s.volta);const g=(s.gps||[]).map(x=>[mins(x[1]),mins(x[2])]).filter(x=>x[0]!=null);
  if(a==null&&g.length)a=Math.min(...g.map(x=>x[0]<240?x[0]+1440:x[0]));if(a==null)a=mins(s.rast0);if(a==null)return null;if(a<240)a+=1440;
  if(b==null&&g.length)b=Math.max(...g.map(x=>x[1]==null?0:x[1]<240?x[1]+1440:x[1]));if(b==null||b<=0)b=a+60;while(b<a)b+=1440;return [a,b]}
 let TNC=null,TND=null;
-function tno(s){if(TND!==D){TND=D;TNC=new Map()}if(TNC.has(s))return TNC.get(s);let k=s.turno||'OUTROS';const cfg=EXP[CX.s];
- if(cfg){const [y,mo,da]=D.dia.split('-'),sab=new Date(+y,mo-1,+da).getDay()===6,W=cfg.map(T=>({k:T.k,ini:sab?T.sab[0]:T.ini,fim:sab?T.sab[1]:T.fim})),J=janela(s);
+function tno(s){if(TND!==D){TND=D;TNC=new Map()}if(TNC.has(s))return TNC.get(s);let k=s.fp?'FP':(s.turno||'OUTROS');const cfg=EXP[CX.s];   // fp: setor que a INLOG mostra no dia sem estar na programação dele (repasse ou controle aberto no setor errado)
+ if(cfg&&!s.fp){const [y,mo,da]=D.dia.split('-'),sab=new Date(+y,mo-1,+da).getDay()===6,W=cfg.map(T=>({k:T.k,ini:sab?T.sab[0]:T.ini,fim:sab?T.sab[1]:T.fim})),J=janela(s);
   if(J){let best=-1;W.forEach(T=>{const o=Math.min(J[1],T.fim)-Math.max(J[0],T.ini);if(o>best){best=o;k=T.k}});if(best<=0)k=W.reduce((a,T)=>{const d=J[0]<T.ini?T.ini-J[0]:Math.max(0,J[0]-T.fim);return !a||d<a.d?{d,k:T.k}:a},null).k}
   else{const l=String(s.turno||'').toUpperCase();k=['MATUTINO','MANHA','DIURNO'].includes(l)?W[0].k:['VESPERTINO','TARDE','NOTURNO'].includes(l)?W[W.length-1].k:'X'}}
  TNC.set(s,k);return k}
 function turnos(){const T=[...new Set(D.S.map(tno))].sort((a,b)=>(TORD.indexOf(a)+99*(TORD.indexOf(a)<0))-(TORD.indexOf(b)+99*(TORD.indexOf(b)<0)));
- if(!T.includes(TURNO)){const h=new Date().getHours(),at=T.filter(t=>D.S.some(s=>tno(s)===t&&stK(s)==='ex'));TURNO=at[0]||((h>=17||h<4)?T[T.length-1]:T[0])||null}
+ if(!T.includes(TURNO)){const h=new Date().getHours(),R0=T.filter(t=>!['FP','OUTROS','X'].includes(t)),R=R0.length?R0:T,at=R.filter(t=>D.S.some(s=>tno(s)===t&&stK(s)==='ex'));TURNO=at[0]||((h>=17||h<4)?R[R.length-1]:R[0])||null}   // a aba que abre sozinha é sempre a de um turno programado
  const el=document.getElementById('tabsT');el.innerHTML=T.map(t=>`<button data-t="${t}" class="${t===TURNO?'on':''}">${TLAB[t]||t}</button>`).join('');el.style.display=T.length<2||VIEW==='ate'?'none':'';
  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{TURNO=b.dataset.t;FILT='all';render()})}
 function cidades(){const sel=document.getElementById('cid');sel.innerHTML=CIDADES.map(c=>`<option value="${c.s}"${c===CX?' selected':''}>${c.n}</option>`).join('');document.getElementById('cons').href='consulta.html?c='+CX.s;
@@ -187,9 +187,9 @@ function rastro(s){   // pelo rastreio: 'ex' no setor | 'ainda' indo para o seto
  if(s.zf===undefined&&s.uset===undefined){if(!s.pos||!(s.ring||[]).length)return null;const d=idade(s.ult);if(d!=null&&d>30)return 'saiu';return !naGar(s.pos)&&s.ring.some(r=>dentroAnel(s.pos,r)||pertoAnel(s.pos,r,150))?'ex':'saiu'}
  const du=s.uset!=null?idade(s.uset):null;
  if(s.zf==='setor'&&du!=null&&du<=15)return 'ex';
- if(s.pos&&!naGar(s.pos)&&(idade(s.ult)??99)<=15&&(s.ring||[]).some(r=>dentroAnel(s.pos,r)||pertoAnel(s.pos,r,150)))return 'ex';   // posição atual (GPS) de um caminhão do setor está dentro dele
- if(s.zf==='garagem'||s.volta)return s.uset==null?'nunca':'saiu';
+ if(s.zf==='garagem'||s.volta)return s.uset==null?'nunca':'saiu';   // voltou à garagem: o turno deste setor acabou (o que o caminhão faz depois é de outra rota)
  if(outraRota(s))return s.uset==null?'nunca':'saiu';
+ if(s.pos&&!naGar(s.pos)&&(idade(s.ult)??99)<=15&&(s.ring||[]).some(r=>dentroAnel(s.pos,r)||pertoAnel(s.pos,r,150)))return 'ex';   // posição atual (GPS) de um caminhão do setor está dentro dele (antes vinha primeiro: setor diurno virava "em execução" de noite quando o caminhão passava por ele em outra rota)
  if(du!=null&&du<=30)return 'ex';
  if(du!=null&&s.atp&&du<=120)return 'ex';           // foi descarregar no aterro no meio da rota
  if(s.uset==null)return (idade(s.ugps)??99)<=30?'ainda':'nunca';
@@ -270,7 +270,7 @@ function renderCol(){const S0=D.S.filter(s=>tno(s)===TURNO),S=S0.slice();
 function card(s){const k=stK(s),p=pg(s),lv=nivel(p),g=s.pgps!=null,ag=k==='ag',w0=PREV[s.s]??0,ve=[...new Set([...(s.veic||[]),...(s.gps||[]).map(x=>nv(x[0]))].map(nv))].filter(v=>v&&v!=='?');
  const cl=`k-${k} l-${lv}`,cor=ag?HEX.ag:HEX[lv];
  return `<div class="sec ${cl} ${OPEN.has(s.s)?'open':''}" data-c="${esc(s.s)}">
-  <div class="sh"><span class="nm">${esc(s.s)}</span><div class="mid"><span class="stp ${k} ${k==='in'?(lv==='ok'?'wa':lv):''}"><span class="dt"></span>${ST[k]}${k!=='ag'&&p>=META?'<span class="bdg">🏆 meta</span>':''}</span>${ve.length?`<span class="vei">🚛 ${esc(ve.join(' · '))}</span>`:''}${k==='ex'?apoio(s).filter(x=>x.ativo).map(x=>`<span class="apo">🤝 apoio ${esc(x.v)}${x.gps?' (GPS)':''} · há ${hm((idade(hora(x.a))??0)*60)}</span>`).join(''):''}${atS(s).length?`<span class="vei">⛰ ${atS(s).length} ${atS(s).length>1?'viagens':'viagem'} ao aterro</span>`:''}</div>
+  <div class="sh"><span class="nm">${esc(s.s)}</span><div class="mid"><span class="stp ${k} ${k==='in'?(lv==='ok'?'wa':lv):''}"><span class="dt"></span>${ST[k]}${k!=='ag'&&p>=META?'<span class="bdg">🏆 meta</span>':''}</span>${s.fp?'<span class="vei">📌 fora da programação deste dia</span>':''}${ve.length?`<span class="vei">🚛 ${esc(ve.join(' · '))}</span>`:''}${k==='ex'?apoio(s).filter(x=>x.ativo).map(x=>`<span class="apo">🤝 apoio ${esc(x.v)}${x.gps?' (GPS)':''} · há ${hm((idade(hora(x.a))??0)*60)}</span>`).join(''):''}${atS(s).length?`<span class="vei">⛰ ${atS(s).length} ${atS(s).length>1?'viagens':'viagem'} ao aterro</span>`:''}</div>
   <span class="pc" style="color:${ag?'var(--mut)':CT[lv]}">${ag?'—':nf(p)+'%'}<small>${g?'RASTREIO':'INLOG'}</small></span><span class="ch">▼</span></div>
   <div class="bar"><span data-w="${ag?0:Math.min(100,p)}" style="width:${ag?0:w0}%;background:${cor}"></span><i class="meta"></i></div>
   ${g?`<div class="ib"><small>INLOG${s.agd?' · agenda '+agd(s):''}</small><div class="bar"><span data-w="${Math.min(100,s.pct||0)}" style="width:0"></span></div><b>${nf(s.pct||0)}%</b></div>`:'<div style="height:6px"></div>'}${k==='ex'?etaHtml(s,p):''}
@@ -439,12 +439,12 @@ function esquecer(){PWM=null;KC.clear();try{localStorage.removeItem('tc_pw');loc
 async function carregar(){const pw=senha();document.getElementById('sair').hidden=!pw;if(!pw){D=null;document.getElementById('app').hidden=true;document.getElementById('lock').hidden=false;return}
  try{D=await abrir(pw);document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;render();if(!DIA){HOJE=D.dia;if(!Object.keys(IDX).length)indice();else botoes()}}
  catch(e){if(DIA||e.name!=='OperationError'){document.getElementById('lock').hidden=true;document.getElementById('app').hidden=false;document.getElementById('tit').textContent='Coleta '+CX.n;document.getElementById('sub').textContent='';document.getElementById('tabsT').innerHTML='';document.getElementById('tabsT').style.display='none';document.getElementById('placar').innerHTML='';document.getElementById('chips').innerHTML='';document.getElementById('podio').innerHTML='';document.getElementById('ord').innerHTML='';document.getElementById('list').innerHTML='<div class="note">'+(DIA?'Não há dados guardados desse dia.':'Os dados desta cidade ainda não estão disponíveis. Volte em alguns minutos.')+'</div>';return}esquecer();document.getElementById('sair').hidden=true;document.getElementById('app').hidden=true;document.getElementById('lock').hidden=false;document.getElementById('err').textContent='Senha incorreta ou dados indisponíveis.'}}
-document.getElementById('relBtn').onclick=async()=>{const b=document.getElementById('relBtn');if(!D)return;if(!window.relatorio){b.disabled=true;try{await new Promise((ok,er)=>{const s=document.createElement('script');s.src='relatorio.js?v=9';s.onload=ok;s.onerror=er;document.head.appendChild(s)})}catch(e){b.disabled=false;return}b.disabled=false}window.relatorio(D,CX)};
+document.getElementById('relBtn').onclick=async()=>{const b=document.getElementById('relBtn');if(!D)return;if(!window.relatorio){b.disabled=true;try{await new Promise((ok,er)=>{const s=document.createElement('script');s.src='relatorio.js?v=10';s.onload=ok;s.onerror=er;document.head.appendChild(s)})}catch(e){b.disabled=false;return}b.disabled=false}window.relatorio(D,CX)};
 document.getElementById('go').onclick=()=>{const i=document.getElementById('pw'),v=i.value;if(!v)return;esquecer();PWM=v;i.value='';
  try{if(document.getElementById('lembra').checked){localStorage.setItem('tc_pw',v);localStorage.setItem('tc_pw_exp',Date.now()+PWD)}else sessionStorage.setItem('tc_pw',v)}catch(e){}carregar()};
 document.getElementById('sair').onclick=()=>{esquecer();location.reload()};
 document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
-const VERSAO='2026-11-09.2';   // ao publicar mudança no site, troque este número: as telas abertas se atualizam sozinhas
+const VERSAO='2026-11-18.1';   // ao publicar mudança no site, troque este número: as telas abertas se atualizam sozinhas
 setInterval(async()=>{if(DIA||document.getElementById('rel')||document.getElementById('sheet').classList.contains('open'))return;
  try{const t=await(await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'})).text(),m=t.match(/const VERSAO='([^']+)'/);if(m&&m[1]!==VERSAO)location.reload()}catch(e){}},600000);
 cidades();carregar();setInterval(()=>{if(!DIA)indice()},900000);setInterval(()=>{if(D&&!DIA&&!document.getElementById('sheet').classList.contains('open'))carregar()},120000);
