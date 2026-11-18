@@ -44,7 +44,16 @@ RAIO_ACESSO = 30        # metros entre o GPS e a via de acesso
 JANELA_ACESSO = 2400    # segundos antes da entrada / depois da saída do aterro
 SAIDA_ATERRO = 900      # segundos fora do raio para considerar que o caminhão saiu do aterro
 VERSAO_HIST = 13        # sobe quando o histórico ganha campos novos (dias antigos são refeitos)
-REFAZ_DIAS = {8: 7, 9: 7, 10: 7, 11: 7, 12: 7}   # versão antiga -> só os últimos N dias são refeitos (13: percentual só nos trechos de coleta; GPS de outro turno não entra no setor)
+REFAZ_DIAS = {8: 7, 9: 7, 10: 7, 11: 7, 12: 7, 13: 7}   # versão antiga -> só os últimos N dias são refeitos (13: percentual só nos trechos de coleta; GPS de outro turno não entra no setor)
+# Setor que a operação roda em outro turno que o do cadastro da INLOG. Araguari 4001 (SEG/TER): está como DIURNO na INLOG,
+# mas sai a partir das 16h25 junto com as rotas da noite (definido pela Torre de Controle em 18/11/2026).
+TURNO_FIXO = {"araguari": {"4001": "NOTURNO"}}
+REV_CIDADE = {"araguari": 1}   # sobe quando muda algo só de uma cidade: os últimos 7 dias dela são refeitos
+
+
+def versao():
+    """Versão do histórico da cidade: a geral mais a revisão própria dela."""
+    return VERSAO_HIST + REV_CIDADE.get(CID.get("slug"), 0) / 100
 
 
 ORCAMENTO = 200        # segundos por execução (o laço roda a cada 5 min); o histórico antigo só usa o que sobrar
@@ -1353,7 +1362,7 @@ def montar(s, dia, cad, at):
         elif cod in emprestado:
             extra = emprestado[cod]   # hoje o setor tem registro e também uma coleta de hoje lançada na agenda de ontem: junta os dois
         info = cad["setores"].get(cod, {}) if cad.get("setores") else {}
-        o = {"s": cod, "turno": turno_do_setor(x, rot_turno), "sit": (x.get("Situacao") or "").strip(), "pct": x.get("PorcentagemRound") or 0,
+        o = {"s": cod, "turno": TURNO_FIXO.get(CID.get("slug"), {}).get(cod) or turno_do_setor(x, rot_turno), "sit": (x.get("Situacao") or "").strip(), "pct": x.get("PorcentagemRound") or 0,
              "ult": x.get("DisplayUltimoPeriodico"), "pos": [x["Latitude"] / 1e6, x["Longitude"] / 1e6] if x.get("Latitude") else None,
              "veic": list(veics.get(cod) or ([x["Veiculo"]] if x.get("Veiculo") else [])), "entrada": None, "dist": 0, "vel": None, "stop": 0, "par": [], "lin": [],
              "ring": [[[round(a, 5), round(b, 5)] for a, b in dec(r)] for r in info.get("aneis", [])] if info else [r for r in aneis.get(str(x.get("CodigoSetor")), []) if len(r) > 2]}
@@ -1679,13 +1688,13 @@ def situacao(v):
 def guardar_dia(dados, sit, idx):
     S = [x for x in dados["S"] if x["sit"] != "AGUARDANDO" or x["pct"]]
     if not S and sit == "final":   # dia sem coleta registrada na INLOG
-        idx["dias"][dados["dia"]] = {"s": "vazio", "v": VERSAO_HIST}
+        idx["dias"][dados["dia"]] = {"s": "vazio", "v": versao()}
         return
     os.makedirs(HIST, exist_ok=True)
     criptografar(json.dumps(dados, separators=(",", ":")).encode(), os.path.join(HIST, dados["dia"] + ".enc.json"), True)
     S = [x for x in S if not x.get("fp")]   # setor fora da programação do dia não entra na média nem na contagem do dia
     inc = sum(1 for x in dados["S"] if encerrou(x, sit == "final") and not x.get("fp"))
-    idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(pct_gps(x) for x in S) / len(S)) if S else 0, "n": len(S), "i": inc, "v": VERSAO_HIST}
+    idx["dias"][dados["dia"]] = {"s": sit, "m": round(sum(pct_gps(x) for x in S) / len(S)) if S else 0, "n": len(S), "i": inc, "v": versao()}
 
 
 def cad_cidade():
@@ -1728,7 +1737,7 @@ def proximo_dia_antigo(idx, dia, feitos):
     for k in range(1, CID.get("dias_busca", DIAS_BUSCA) + 1):
         d = (dt.date.fromisoformat(dia) - dt.timedelta(days=k)).isoformat()
         v = idx["dias"].get(d)
-        if isinstance(v, dict) and v.get("s") in ("vazio", "final") and (v.get("v", 1) >= VERSAO_HIST or k > REFAZ_DIAS.get(v.get("v", 1), 10 ** 6)):   # versões antigas (e dias vazios antigos) são refeitas
+        if isinstance(v, dict) and v.get("s") in ("vazio", "final") and (v.get("v", 1) >= versao() or k > REFAZ_DIAS.get(int(v.get("v", 1)), 10 ** 6)):   # versões antigas (e dias vazios antigos) são refeitas
             continue
         return d
     return None
@@ -1780,7 +1789,7 @@ def main():
                 ant = idx["dias"].get(d)
                 t = (ant.get("t", 0) if isinstance(ant, dict) else 0) + 1
                 print("dia", d, "falhou (%d):" % t, e)
-                idx["dias"][d] = {"s": "vazio", "v": VERSAO_HIST, "e": str(e)[:120]} if t >= 3 else {"s": "erro", "t": t}
+                idx["dias"][d] = {"s": "vazio", "v": versao(), "e": str(e)[:120]} if t >= 3 else {"s": "erro", "t": t}
             salvar_indice(idx, dia)
     print("tempo total: %.0f s" % (time.time() - _T0), "· setores com apoio pelo GPS: %d · com rastreio completo do caminhão: %d" % tuple(APOIOS),
           "· turno pelo nome do setor: %d" % TURNOS_NOME[0])
